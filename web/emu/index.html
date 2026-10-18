@@ -26,9 +26,7 @@ body { font-family: var(--display); padding-left: max(16px, env(safe-area-inset-
 header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; }
 h1 { font-size: 30px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; margin: 0; }
 h1 small { font-size: 14px; font-weight: 500; letter-spacing: 0.08em; color: var(--muted); margin-left: 10px; }
-.sound { font: 600 15px/1 var(--display); letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid var(--amber); color: var(--amber); background: transparent; border-radius: 4px; padding: 10px 16px; cursor: pointer; }
-.sound[aria-pressed="true"] { background: var(--amber); color: var(--body); }
-.sound:focus-visible, .btn:focus-visible, .enc:focus-visible, input:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.btn:focus-visible, .enc:focus-visible, input:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 
 .panel { background: var(--body); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: grid; gap: 18px; box-shadow: 0 18px 40px rgba(0,0,0,0.35); }
 .top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; align-items: start; }
@@ -86,7 +84,6 @@ kbd { font: 500 12px var(--mono); border: 1px solid var(--line); border-radius: 
 <div class="wrap">
   <header>
     <h1>Ravel <small id="ver">FM-1 emulator</small></h1>
-    <button class="sound" id="sound" aria-pressed="false">Sound on</button>
   </header>
 
   <section class="panel" aria-label="FM-1 panel">
@@ -105,7 +102,7 @@ kbd { font: 500 12px var(--mono); border: 1px solid var(--line); border-radius: 
     <div>
       <h2>Playing</h2>
       <ul>
-        <li>Press <b>Sound on</b>, then play the keys with a mouse, touch, or your computer keyboard: <kbd>A</kbd> is C4, the row <kbd>A</kbd>–<kbd>;</kbd> plays white keys and <kbd>W E T Y U O P</kbd> the black keys.</li>
+        <li>Play the keys with a mouse, touch, or your computer keyboard; sound starts with your first touch. <kbd>A</kbd> is C4, the row <kbd>A</kbd>–<kbd>;</kbd> plays white keys and <kbd>W E T Y U O P</kbd> the black keys.</li>
         <li><kbd>[</kbd> and <kbd>]</kbd> shift the octave. <b>PLAY</b> holds notes.</li>
         <li>Drag a knob up or down, or scroll over it.</li>
       </ul>
@@ -258,19 +255,18 @@ function onAudio(e) {
   }
 }
 
-async function soundToggle() {
-  const b = $("sound");
-  if (ctx && ctx.state === "running") { await ctx.suspend(); b.setAttribute("aria-pressed", "false"); b.textContent = "Sound on"; return; }
+/* browsers only allow sound after the viewer interacts: start it on the first touch, key or click */
+function soundStart() {
+  if (!rv) return;
   if (!ctx) {
     try { ctx = new AudioContext({ sampleRate: rv.rv_sample_rate() }); } catch (e) { ctx = new AudioContext(); }
     ratio = rv.rv_sample_rate() / ctx.sampleRate;
     node = ctx.createScriptProcessor(1024, 0, 2); node.onaudioprocess = onAudio; node.connect(ctx.destination);
     rpos = wpos;
   }
-  await ctx.resume();
-  b.setAttribute("aria-pressed", "true"); b.textContent = "Sound off";
+  if (ctx.state !== "running") ctx.resume().catch(() => {});
 }
-$("sound").addEventListener("click", () => { if (rv) soundToggle(); });
+for (const ev of ["pointerdown", "keydown"]) addEventListener(ev, soundStart, { capture: true });
 
 /* the screen and LEDs, every animation frame; the device runs from the audio clock when sound is on */
 const cv = $("screen"), g = cv.getContext("2d"), img = g.createImageData(240, 240), px = new Uint32Array(img.data.buffer);
