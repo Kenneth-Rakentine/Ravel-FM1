@@ -162,6 +162,7 @@ typedef struct {
   bd_playhead head[BD_NUM_HEADS], slave[BD_NUM_HEADS];
   bd_hquant numerator_quantizer[BD_NUM_HEADS];
   int32_t tap_env_phase[BD_NUM_TAPS], tap_env_inc[BD_NUM_TAPS];   /* Q30 */
+  int32_t tap_env_delay[BD_NUM_TAPS];                              /* Q8, the delay tap_env_inc is for */
   bd_walk position_mod, shape_mod;
   int32_t tap_mod_phase, tap_mod_frequency;   /* Q32 unsigned in int32 */
   int32_t density_filter, fm_filter, slice_index_filter;   /* Q16 hysteresis values */
@@ -235,6 +236,12 @@ void bd_seed_rng(bd_engine* e, uint32_t seed);
 void bd_process(bd_engine* e, const bd_params* p, bd_seed_state seed,
                 const uint8_t* gate_flags, const uint8_t* freeze,
                 const bd_frame* in, bd_frame* out, int n);
+
+/* For a display, read from another context than bd_process (a stale value only
+ * draws late): the tape's sample at a delay (0 = newest), Q15 mono, and the grains
+ * playing now, as delays in samples and levels in Q15. Returns the number of grains. */
+int32_t bd_tape_peek(const bd_engine* e, int32_t delay);
+int bd_active_grains(const bd_engine* e, int32_t* delays, int32_t* levels, int max);
 
 /* Gate flags from a gate level, as stmlib's ExtractGateFlags. */
 static inline uint8_t bd_gate_flags(uint8_t previous, int high) {

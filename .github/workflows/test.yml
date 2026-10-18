@@ -27,3 +27,58 @@ jobs:
         with:
           name: beads-renders
           path: tests/beads/out/*.wav
+
+  simulator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python packages (font generator)
+        run: pip install pillow
+      - name: Build the simulator
+        run: sh host/build_host.sh
+      - name: Run the scenarios
+        run: |
+          mkdir -p build/scenarios
+          for s in tests/scenarios/*.rvl; do ./build/host/ravel_host "$s" build/scenarios; done
+      - name: Keep the screenshots and audio
+        uses: actions/upload-artifact@v4
+        with:
+          name: simulator-output
+          path: build/scenarios/
+
+  emulator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: |
+          sudo apt-get install -y clang lld
+          pip install pillow
+      - name: Build the WebAssembly emulator
+        run: sh web/emu/build.sh
+      - name: Smoke test
+        run: node web/emu/test.mjs
+      - name: One-file page
+        run: python3 web/emu/bundle.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ravel-emulator
+          path: build/web/ravel-emulator.html
+
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python packages (font generator)
+        run: pip install pillow
+      - name: JieLi toolchain
+        run: sh tools/get_toolchain.sh "$HOME/.jieli"
+      - name: Build the app and the loader, and check them
+        run: JIELI_TOOLCHAIN="$HOME/.jieli/toolchain" python3 tools/build.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ravel-firmware
+          path: |
+            build/ravel.bin
+            build/ravel.elf
+            build/loader/ota.bin

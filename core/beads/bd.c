@@ -1140,12 +1140,12 @@ static void delayctl_render(bd_engine* e, bd_seed_state seed, const uint8_t* ext
     } else {
       /* Reset all envelopes when unfreezing. */
       if (d->freeze) {
-        for (int i = 0; i < BD_NUM_TAPS; ++i) { d->tap_env_phase[i] = 0; d->tap_env_inc[i] = 0; }
+        for (int i = 0; i < BD_NUM_TAPS; ++i) { d->tap_env_phase[i] = 0; d->tap_env_inc[i] = 0; d->tap_env_delay[i] = 0; }
       }
       /* Reset and resync the envelopes that will be faded-in. */
       if (clock_retrig(&d->clock)) {
         int start = clock_new_index(&d->clock) * BD_NUM_HEADS;
-        for (int i = start; i < start + BD_NUM_HEADS; ++i) { d->tap_env_phase[i] = 0; d->tap_env_inc[i] = 0; }
+        for (int i = start; i < start + BD_NUM_HEADS; ++i) { d->tap_env_phase[i] = 0; d->tap_env_inc[i] = 0; d->tap_env_delay[i] = 0; }
       }
       d->multiplier_lp += mul16(655, slice_modulation - d->multiplier_lp);
       int32_t multiplier = clampi(d->multiplier_lp * 15 + Q16, Q16, 16 * Q16);
@@ -1162,7 +1162,10 @@ static void delayctl_render(bd_engine* e, bd_seed_state seed, const uint8_t* ext
         int64_t delay_q8 = (((int64_t)clock_interval(&d->clock, interval) * tap_ratio[ratio]) >> 16) * (mi + tp);
         if (delay_q8 < (K_MIN_DELAY << 8)) delay_q8 = K_MIN_DELAY << 8;
         if (delay_q8 > ((int64_t)d->max_delay << 8)) delay_q8 = (int64_t)d->max_delay << 8;
-        d->tap_env_inc[i] = (int32_t)(((int64_t)1 << 38) / delay_q8);
+        if (delay_q8 != d->tap_env_delay[i]) {        /* (port) divide only when the delay moves */
+          d->tap_env_delay[i] = (int32_t)delay_q8;
+          d->tap_env_inc[i] = (int32_t)(((int64_t)1 << 38) / delay_q8);
+        }
         out->tap[i].delay = (int32_t)(delay_q8 << 2);
         int32_t ratio_fade = tp ? mf : Q16 - mf;
         int32_t base_gain = mul16(mul16(tap_gain[ratio], ratio_fade), clock_gain(&d->clock, interval));
@@ -1399,4 +1402,29 @@ void bd_process(bd_engine* e, const bd_params* p, bd_seed_state seed, const uint
   }
   e->dry_ = dry;
   e->wet_ = wet;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Display helpers (not in Beads)                                            */
+/* ------------------------------------------------------------------------ */
+
+int32_t bd_tape_peek(const bd_engine* e, int32_t delay) {
+  const bd_tape* t = &e->tape;
+  if (t->max_delay <= 0) return 0;
+  int32_t i = (t->write_ptr + 1 + delay) % t->max_delay;
+  if (i < 0) i += t->max_delay;
+  bd_frame f = tape_load(t, i);
+  return (f.l + f.r) >> 1;
+}
+
+int bd_active_grains(const bd_engine* e, int32_t* delays, int32_t* levels, int max) {
+  int n = 0;
+  for (int i = 0; i < BD_NUM_GRAINS && n < max; ++i) {
+    const bd_grain* g = &e->player.grain[i];
+    if (grain_done(g)) continue;
+    delays[n] = g->delay >> 10;
+    levels[n] = imax(g->steal.value, 0) >> 15;
+    ++n;
+  }
+  return n;
 }
