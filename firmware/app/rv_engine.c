@@ -17,6 +17,45 @@ static float in_buf[RV_SUB * 2];
 static uint8_t punch[8];
 static svf_t punch_f[2];
 static float lim_gain = 1.0f;
+static dcb_t master_dc[2];
+
+/* The guard. Any sound that goes non-finite (NaN, infinity) or runs far past full scale is
+ * silenced and its memory cleared where it started (a voice, a track's chain, a bus), so a
+ * blown-up state can never reach the output or stay stuck there. rv_fault_* say what tripped. */
+#ifndef RV_GUARD
+#define RV_GUARD 256.0f
+#endif
+int rv_fault_count, rv_fault_where;
+static void fault(int where)
+{
+    rv_fault_count++;
+    rv_fault_where = where;
+}
+static int buf_bad(const float *b, int n)
+{
+    int i;
+    for (i = 0; i < n; i++)
+        if (!(b[i] > -RV_GUARD && b[i] < RV_GUARD))   /* false for NaN too */
+            return 1;
+    return 0;
+}
+/* clear the bad samples; 1 if there were any */
+static int buf_fix(float *b, int n)
+{
+    int i, bad = 0;
+    for (i = 0; i < n; i++)
+        if (!(b[i] > -RV_GUARD && b[i] < RV_GUARD)) {
+            b[i] = 0.0f;
+            bad = 1;
+        }
+    return bad;
+}
+static void zero_buf(float *b, int n)
+{
+    int i;
+    for (i = 0; i < n; i++)
+        b[i] = 0.0f;
+}
 static float master_drive_comp = 1.0f;
 
 uint32_t rv_rng(void) { return xs32(&eng_rng); }
@@ -120,7 +159,7 @@ static void note_on_internal(int t, int note, int vel, int env, uint16_t chain)
         vo->rng = xs32(&eng_rng);
         vo->track = (uint8_t)t;
         vo->age = ++age_ctr;
-        synth_voice_note_on(vo, note, v, legato);
+        synth_voice_note_on(vo, note, v, legato, clampi(rv.tp[t][TP_ENGINE], 0, ENG_N - 1));
         if (env > 0) {
             artic_cfg_lib(&vo->cfg, rv.lib[(env - 1) & 255], tr->eff);
             vo->cfg_lib = 1;
@@ -474,6 +513,12 @@ static void render_sub(float *outl, float *outr, int n)
         if (!v->cfg_lib)
             artic_cfg_track(&v->cfg, tr->eff);
         lv = synth_voice_render(v, tr, tr->buf, n, 0.0f);
+        if (buf_bad(tr->buf, n) || !(lv == lv)) {
+            fault(100 + rv.tp[v->track][TP_ENGINE]);
+            __builtin_memset(v, 0, sizeof(*v));
+            zero_buf(tr->buf, n);
+            continue;
+        }
         rv_live.voices_synth++;
         if (v->age >= lead_age[v->track]) {          /* the newest voice leads */
             lead_age[v->track] = v->age;
@@ -496,6 +541,12 @@ static void render_sub(float *outl, float *outr, int n)
         if (!v->cfg_lib)
             artic_cfg_track(&v->cfg, tr->eff);
         lv = strike_render(v, tr, tr->buf, n);
+        if (buf_bad(tr->buf, n) || !(lv == lv)) {
+            fault(200 + rv.tp[v->track][TP_S0]);
+            __builtin_memset(v, 0, sizeof(*v));
+            zero_buf(tr->buf, n);
+            continue;
+        }
         rv_live.voices_strike++;
         tr->lead_env = lv;
         rv_live.stage[v->track] = v->a.stage;
@@ -507,7 +558,7 @@ static void render_sub(float *outl, float *outr, int n)
         const float *eff = tr->eff;
         int kind = rv.tp[t][TP_KIND];
         float drive, fld, derez, ia, ib, imix, lvl, pan, gl, gr, peak = 0.0f, ring = tr->ring_amt;
-        int bits, mask, ins;
+        int bits, mask, ins, chain_bad = 0;
         uint8_t muted = (rv.mute >> t) & 1u;
         if (rv.solo && !((rv.solo >> t) & 1u))
             muted = 1;
@@ -520,6 +571,11 @@ static void render_sub(float *outl, float *outr, int n)
             if (!tr->tape.a.gate && tr->tape.a.stage == AS_OFF)
                 artic_cfg_track(&tr->tape.cfg, eff);
             tr->lead_env = tape_track_render(tr, t, tr->buf, n, bi);
+            if (buf_fix(tr->buf, n) || !(tr->lead_env == tr->lead_env)) {
+                fault(300 + rv.tp[t][TP_S0]);
+                tr->lead_env = 0.0f;
+                __builtin_memset(&tr->tape.a, 0, sizeof(tr->tape.a));
+            }
             rv_live.stage[t] = tr->tape.a.stage;
             rv_live.stage_pos[t] = tr->tape.a.u;
             /* Beads FEEDBACK goes back into the tape */
@@ -557,6 +613,10 @@ static void render_sub(float *outl, float *outr, int n)
             if (ring > 0.001f)
                 x = lerpf(x, x * tr->ring[i] / ring, clampf(ring, 0.0f, 1.0f));
             x = dcb_tick(&tr->dc, x);
+            if (!(x > -RV_GUARD && x < RV_GUARD)) {
+                x = 0.0f;
+                chain_bad = 1;
+            }
             tr->buf[i] = x;
             if (fm_fabsf(x) > peak)
                 peak = fm_fabsf(x);
@@ -570,6 +630,18 @@ static void render_sub(float *outl, float *outr, int n)
                 dly_in[i] += m * (punch[6] ? 0.8f : eff[TP_DLYS] * (1.0f / 127.0f));
                 rev_in[i] += m * (punch[6] ? 0.8f : eff[TP_REVS] * (1.0f / 127.0f));
             }
+        }
+        if (chain_bad) {                             /* the chain blew up: clear its memory */
+            fault(400 + ins);
+            __builtin_memset(&tr->dc, 0, sizeof(tr->dc));
+            __builtin_memset(tr->comb, 0, sizeof(tr->comb));
+            __builtin_memset(tr->smear, 0, sizeof(tr->smear));
+            __builtin_memset(tr->hilb_i, 0, sizeof(tr->hilb_i));
+            __builtin_memset(tr->hilb_q, 0, sizeof(tr->hilb_q));
+            tr->comb_lp = tr->sh_z = tr->crush_hold = tr->derez_hold = 0.0f;
+            tr->ring_amt = 0.0f;
+            zero_buf(tr->exc, n);
+            zero_buf(tr->ring, n);
         }
         if (muted)
             peak *= 0.0f;
@@ -600,16 +672,36 @@ static void render_sub(float *outl, float *outr, int n)
             body = tape_body;
         }
         vocoder_run(voc_in, body, n, bus_mono);
+        if (buf_fix(bus_mono, n)) {
+            fault(500);
+            buses_reset();
+        }
     }
     feedback_run(fb_in, n, fb_out);
+    if (buf_fix(fb_out, n)) {
+        fault(600);
+        buses_reset();
+    }
     for (i = 0; i < n; i++) {
         bus_mono[i] += fb_out[i];
         outl[i] += bus_mono[i];
         outr[i] += bus_mono[i];
     }
     pair_run(pair_in, n, outl, outr);
+    if (buf_fix(outl, n) | buf_fix(outr, n)) {
+        fault(700);
+        buses_reset();
+    }
     delay_run(dly_in, n, outl, outr);
+    if (buf_fix(outl, n) | buf_fix(outr, n)) {
+        fault(800);
+        buses_reset();
+    }
     space_run(rev_in, n, outl, outr);
+    if (buf_fix(outl, n) | buf_fix(outr, n)) {
+        fault(900);
+        buses_reset();
+    }
 
     /* the tape's input */
     {
@@ -626,6 +718,8 @@ static void render_sub(float *outl, float *outr, int n)
                 x = (in_buf[2 * i] + in_buf[2 * i + 1]) * 0.5f * ingain;
             tape_src[i] = x + tape_fb[i];
         }
+        if (buf_fix(tape_src, n))
+            fault(1000);
         tape_capture(tape_src, n, 0, (mpulse & 15) == 0 && playing ? 1 : !playing);
     }
     /* input monitor */
@@ -664,14 +758,31 @@ static void render_sub(float *outl, float *outr, int n)
                 }
             }
         }
+        /* the safety stage: no DC, a peak limiter at -1 dB (instant attack, about 80 ms
+         * release), and nothing non-finite past it */
+        if (buf_fix(outl, n) | buf_fix(outr, n)) {
+            fault(1100);
+            buses_reset();
+        }
+        if (!(lim_gain > 0.0f && lim_gain <= 1.0f))
+            lim_gain = 1.0f;
         for (i = 0; i < n; i++) {
-            float a = fm_maxf(fm_fabsf(outl[i]), fm_fabsf(outr[i])) * lim_gain;
-            if (a > 0.95f)
-                lim_gain *= 0.95f / a;
+            float a;
+            float yl = outl[i] - master_dc[0].x1 + 0.9995f * master_dc[0].y1;   /* DC blocker, about 3.5 Hz */
+            float yr = outr[i] - master_dc[1].x1 + 0.9995f * master_dc[1].y1;
+            master_dc[0].x1 = outl[i];
+            master_dc[1].x1 = outr[i];
+            master_dc[0].y1 = fm_flush(yl);
+            master_dc[1].y1 = fm_flush(yr);
+            outl[i] = yl;
+            outr[i] = yr;
+            a = fm_maxf(fm_fabsf(outl[i]), fm_fabsf(outr[i])) * lim_gain;
+            if (a > 0.89f)
+                lim_gain *= 0.89f / a;
             else
-                lim_gain += (1.0f - lim_gain) * 0.00005f;
-            outl[i] *= lim_gain;
-            outr[i] *= lim_gain;
+                lim_gain += (1.0f - lim_gain) * 0.0003f;
+            outl[i] = clampf(outl[i] * lim_gain, -0.95f, 0.95f);
+            outr[i] = clampf(outr[i] * lim_gain, -0.95f, 0.95f);
             rv_live.master_l = fm_maxf(fm_fabsf(outl[i]), rv_live.master_l * 0.9999f);
             rv_live.master_r = fm_maxf(fm_fabsf(outr[i]), rv_live.master_r * 0.9999f);
         }
@@ -688,8 +799,10 @@ void rv_render(int32_t *out, int frames)
         int n = frames - done > RV_SUB ? RV_SUB : frames - done;
         render_sub(l, r, n);
         for (i = 0; i < n; i++) {
-            out[2 * (done + i)] = (int32_t)(clampf(l[i], -1.0f, 1.0f) * 8388607.0f);
-            out[2 * (done + i) + 1] = (int32_t)(clampf(r[i], -1.0f, 1.0f) * 8388607.0f);
+            float a = l[i] == l[i] ? clampf(l[i], -1.0f, 1.0f) : 0.0f;   /* never NaN into an integer */
+            float b = r[i] == r[i] ? clampf(r[i], -1.0f, 1.0f) : 0.0f;
+            out[2 * (done + i)] = (int32_t)(a * 8388607.0f);
+            out[2 * (done + i) + 1] = (int32_t)(b * 8388607.0f);
         }
         done += n;
     }

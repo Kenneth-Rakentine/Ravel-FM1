@@ -182,6 +182,9 @@ EXPORT(web_preset_count) int web_preset_count(void) { return rv_preset_count(); 
 EXPORT(web_preset_name) const char *web_preset_name(int i) { return rv_preset_name(i); }
 EXPORT(web_preset_kind) int web_preset_kind(int i) { return rv_preset_kind(i); }
 EXPORT(web_preset_apply) void web_preset_apply(int t, int i) { rv_preset_apply(t & 7, i); }
+extern int rv_fault_count, rv_fault_where;
+EXPORT(web_fault_count) int web_fault_count(void) { return rv_fault_count; }
+EXPORT(web_fault_where) int web_fault_where(void) { return rv_fault_where; }
 EXPORT(web_cpu) uint32_t web_cpu(void) { return rv_live.voices_synth + rv_live.voices_strike; }
 EXPORT(web_gp) int web_gp(int g) { return g >= 0 && g < GP_N ? rv.gp[g] : 0; }
 EXPORT(web_gp_set) void web_gp_set(int g, int v) { rv_pid_set(PID_G(g), v); }

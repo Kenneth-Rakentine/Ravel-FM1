@@ -389,6 +389,34 @@ static void cuts_run(float *l, float *r, int n)
     }
 }
 
+/* clear every bus's memory: after a fault (see rv_engine.c), so a blown-up state cannot persist */
+static void buses_reset(void)
+{
+    __builtin_memset(voc_an, 0, sizeof(voc_an));
+    __builtin_memset(voc_sy, 0, sizeof(voc_sy));
+    __builtin_memset(voc_env, 0, sizeof(voc_env));
+    __builtin_memset(drop_f, 0, sizeof(drop_f));
+    drop_env = drop_ph = 0.0f;
+    voc_dust_acc = 0.0f;
+    __builtin_memset(fb_buf, 0, sizeof(fb_buf));
+    __builtin_memset(&fb_f, 0, sizeof(fb_f));
+    __builtin_memset(fb_comb, 0, sizeof(fb_comb));
+    __builtin_memset(fb_ap, 0, sizeof(fb_ap));
+    __builtin_memset(fb_hi, 0, sizeof(fb_hi));
+    __builtin_memset(fb_hq, 0, sizeof(fb_hq));
+    fb_env = fb_dcx = fb_dcy = fb_comblp = fb_shph = fb_crush = 0.0f;
+    __builtin_memset(pair_f, 0, sizeof(pair_f));
+    pair_ph[0] = pair_ph[1] = pair_prev = 0.0f;
+    __builtin_memset(dly_buf, 0, sizeof(dly_buf));
+    dly_lp = dly_fbv = 0.0f;
+    __builtin_memset(rev_buf, 0, sizeof(rev_buf));
+    __builtin_memset(rev_lp, 0, sizeof(rev_lp));
+    __builtin_memset(rev_ap, 0, sizeof(rev_ap));
+    __builtin_memset(cut_buf, 0, sizeof(cut_buf));
+    cut_left = 0;
+    vocoder_setup();
+}
+
 static void buses_init(void)
 {
     int i;

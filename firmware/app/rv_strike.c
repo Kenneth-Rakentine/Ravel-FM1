@@ -154,10 +154,12 @@ static float strike_render(strike_t *v, track_t *tr, float *out, int n)
             }
             td = t60 / (1.0f + k * (0.3f + damp * 3.0f));
             r = fm_exp2f(-1.0f / (td * 44100.0f) * 9.97f);
-            v->md_b1[k] = 2.0f * r * fm_cosf(6.2831853f * fr * RV_DT);
-            v->md_b2[k] = -r * r;
+            /* a decaying rotation (coupled form): unlike a two-pole recursion its energy cannot grow
+             * when the frequency moves under it (pitch drop, modulation) */
+            v->md_b1[k] = r * fm_cosf(6.2831853f * fr * RV_DT);
+            v->md_b2[k] = r * fm_sinf(6.2831853f * fr * RV_DT);
             pos = body == BODY_MODAL ? fm_fabsf(sin_lut(0.5f * (k + 1) * (0.1f + geom * 0.4f))) : 1.0f;
-            v->md_g[k] = fm_sinf(6.2831853f * fr * RV_DT) * pos * fm_powf(0.5f + tone * 0.5f, (float)k) * 0.12f;
+            v->md_g[k] = pos * fm_powf(0.5f + tone * 0.5f, (float)k) * 0.12f;
         }
     } else if (body == BODY_PING) {
         svf_set(&v->ping, f, 2.0f + decay * decay * 300.0f);
@@ -198,14 +200,18 @@ static float strike_render(strike_t *v, track_t *tr, float *out, int n)
         }
         default:
             for (k = 0; k < nm; k++) {
-                float yn = v->md_b1[k] * v->md_y1[k] + v->md_b2[k] * v->md_y2[k] + v->md_g[k] * x;
-                v->md_y2[k] = v->md_y1[k];
-                v->md_y1[k] = yn;
-                y += yn;
+                float re = v->md_b1[k] * v->md_y1[k] - v->md_b2[k] * v->md_y2[k] + v->md_g[k] * x;
+                float im = v->md_b2[k] * v->md_y1[k] + v->md_b1[k] * v->md_y2[k];
+                v->md_y1[k] = re;
+                v->md_y2[k] = im;
+                y += im;
             }
             y *= 0.6f;
             break;
         }
+        /* a body driven steadily at its resonance (rain, bow, input, a long decay) can ring far
+         * past full scale: round it off gently above about -6 dB */
+        y = 2.0f * sat(y * 0.5f);
         if (ring > 0.001f) {
             v->ring_ph += f * ringf * RV_DT;
             v->ring_ph -= fm_floorf(v->ring_ph);

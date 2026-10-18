@@ -52,6 +52,7 @@ typedef struct {
     artic_t a;
     artic_cfg_t cfg;
     uint8_t cfg_lib;                /* the step recalled a library shape: keep cfg */
+    uint8_t e_eng;                  /* the engine e's state belongs to, + 1 (0 = none) */
     ladder_t lad;
     svf_t svf;
     float lpg;
@@ -75,8 +76,8 @@ typedef struct {
     float dust_acc, dust_next;
     float mph[6];                   /* metallic squares */
     float fmph[2];
-    float md_y1[8], md_y2[8];       /* modal resonators */
-    float md_b1[8], md_b2[8], md_g[8];
+    float md_y1[8], md_y2[8];       /* modal resonators: state (re, im) */
+    float md_b1[8], md_b2[8], md_g[8];  /* r cos w, r sin w, input gain */
     svf_t ping;
     int16_t s1[RV_KS_LEN], s2[RV_KS_LEN];
     int32_t w1, w2;

@@ -213,7 +213,7 @@ kbd { font: 500 11px var(--mono); border: 1px solid var(--line); border-radius: 
       <div>
         <h3>Output</h3>
         <div class="meter"><i id="outm"></i></div>
-        <label class="note" style="display:flex;gap:8px;align-items:center;margin-top:8px">Volume <input type="range" id="vol" min="0" max="100" value="80" style="flex:1"></label>
+        <label class="note" style="display:flex;gap:8px;align-items:center;margin-top:8px">Volume <input type="range" id="vol" min="0" max="100" value="70" style="flex:1"></label>
       </div>
     </aside>
 
@@ -575,7 +575,7 @@ function feedInput(frames) {
 
 /* ------------------------------------------------------------ running */
 const FIFO = 1 << 16, MASK = FIFO - 1, fl = new Float32Array(FIFO), fr = new Float32Array(FIFO);
-let wpos = 0, rpos = 0, ctx = null, node = null, gain = null, ratio = 1, peak = 0;
+let wpos = 0, rpos = 0, ctx = null, node = null, gain = null, ratio = 1, peak = 0, stuck = 0;
 
 function run(ms) {
   rv.rv_set_buttons(held_btn | latched); rv.rv_set_keys(held_keys | kb_keys);
@@ -590,14 +590,21 @@ function onAudio(e) {
   const need = Math.ceil(N * ratio) + 2;
   while (wpos - rpos < need) run(4);
   if (wpos - rpos > need + 8000) rpos = wpos - need;
-  let pk = 0;
+  let pk = 0, sum = 0;
   for (let i = 0; i < N; i++) {
     const i0 = Math.floor(rpos), f = rpos - i0, j0 = i0 & MASK, j1 = (i0 + 1) & MASK;
-    L[i] = fl[j0] + (fl[j1] - fl[j0]) * f; R[i] = fr[j0] + (fr[j1] - fr[j0]) * f;
+    let l = fl[j0] + (fl[j1] - fl[j0]) * f, r = fr[j0] + (fr[j1] - fr[j0]) * f;
+    /* safety: nothing non-finite, nothing past -0.2 dB, whatever the engine does */
+    if (!Number.isFinite(l)) l = 0; if (!Number.isFinite(r)) r = 0;
+    L[i] = l > 0.98 ? 0.98 : l < -0.98 ? -0.98 : l; R[i] = r > 0.98 ? 0.98 : r < -0.98 ? -0.98 : r;
     const a = Math.abs(L[i]); if (a > pk) pk = a;
+    sum += L[i] + R[i];
     rpos += ratio;
   }
   peak = Math.max(pk, peak * 0.9);
+  /* a watchdog: output pinned to one side (a stuck offset) for half a second resets the sound */
+  stuck = Math.abs(sum / (2 * N)) > 0.5 ? stuck + N : 0;
+  if (stuck > ctx.sampleRate / 2) { stuck = 0; rv.web_all_off(); fl.fill(0); fr.fill(0); setStatus("Safety: the output was stuck, sound reset"); }
 }
 
 /* browsers allow sound only after the viewer interacts: it starts with the first touch, click or key */
@@ -606,7 +613,11 @@ function soundStart() {
   if (!ctx) {
     ctx = new AudioContext();
     ratio = 44100 / ctx.sampleRate;
-    gain = ctx.createGain(); gain.gain.value = $("vol").value / 100; gain.connect(ctx.destination);
+    /* volume, then a brick-wall limiter at -1 dB before your speakers */
+    const lim = ctx.createDynamicsCompressor();
+    lim.threshold.value = -1; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.001; lim.release.value = 0.1;
+    lim.connect(ctx.destination);
+    gain = ctx.createGain(); gain.gain.value = $("vol").value / 100; gain.connect(lim);
     node = ctx.createScriptProcessor(1024, 0, 2); node.onaudioprocess = onAudio; node.connect(gain);
     rpos = wpos;
   }

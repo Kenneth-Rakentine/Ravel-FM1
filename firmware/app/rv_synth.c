@@ -212,7 +212,7 @@ static void va_render(voice_t *v, const float *eff, float f, float *out, int n)
             s->ph += dt;
             s->ph2 += sl_dt;
             if (s->ph >= 1.0f) {
-                s->ph -= 1.0f;
+                s->ph -= fm_floorf(s->ph);
                 s->ph2 = s->ph * (sl_dt / dt);
             }
             s->ph2 -= fm_floorf(s->ph2);
@@ -224,12 +224,10 @@ static void va_render(voice_t *v, const float *eff, float f, float *out, int n)
                 float p = k == 0 ? s->ph : s->sph[k];
                 float saw, pul, p2;
                 p += d;
-                if (p >= 1.0f)
-                    p -= 1.0f;
+                p -= fm_floorf(p);
                 saw = 2.0f * p - 1.0f - blep(p, d);
                 p2 = p + (1.0f - pw);
-                if (p2 >= 1.0f)
-                    p2 -= 1.0f;
+                p2 -= fm_floorf(p2);
                 pul = (p < pw ? 1.0f : -1.0f) + blep(p, d) - blep(p2, d);
                 x += lerpf(saw, pul, wave);
                 if (k == 0)
@@ -241,8 +239,7 @@ static void va_render(voice_t *v, const float *eff, float f, float *out, int n)
         }
         if (sub > 0.001f) {                            /* a square an octave down */
             s->sub += dt * 0.5f;
-            if (s->sub >= 1.0f)
-                s->sub -= 1.0f;
+            s->sub -= fm_floorf(s->sub);
             x += sub * (s->sub < 0.5f ? 0.7f : -0.7f);
         }
         if (noise > 0.001f)
@@ -470,19 +467,20 @@ static void phys_render(voice_t *v, const float *eff, float f, const float *exc_
             float r = fm_exp2f(-1.0f / ((0.03f + decay * 2.5f) / (1.0f + k * (0.5f + damp * 2.0f)) * 44100.0f) * 1.44f);
             if (fr > 18000.0f)
                 fr = 18000.0f;
-            b1[k] = 2.0f * r * fm_cosf(6.2831853f * fr * RV_DT);
-            b2[k] = -r * r;
-            /* an impulse rings at about g / sin(w): scale by sin(w) for a level that does not depend on pitch */
-            gn[k] = fm_sinf(6.2831853f * fr * RV_DT) * (k == 0 ? 1.0f : 0.25f + bright * 0.75f) * 0.6f;
+            /* a decaying rotation (coupled form): its energy cannot grow when the pitch moves */
+            b1[k] = r * fm_cosf(6.2831853f * fr * RV_DT);
+            b2[k] = r * fm_sinf(6.2831853f * fr * RV_DT);
+            gn[k] = (k == 0 ? 1.0f : 0.25f + bright * 0.75f) * 0.6f;
         }
         for (i = 0; i < n; i++) {
             float x = s->exc + exc_in[i] * 0.5f, y = 0.0f;
             s->exc = 0.0f;
             for (k = 0; k < 6; k++) {
-                float yn = b1[k] * s->mode_s[k][0] + b2[k] * s->mode_s[k][1] + gn[k] * x;
-                s->mode_s[k][1] = s->mode_s[k][0];
-                s->mode_s[k][0] = yn;
-                y += yn;
+                float re = b1[k] * s->mode_s[k][0] - b2[k] * s->mode_s[k][1] + gn[k] * x;
+                float im = b2[k] * s->mode_s[k][0] + b1[k] * s->mode_s[k][1];
+                s->mode_s[k][0] = re;
+                s->mode_s[k][1] = im;
+                y += im;
             }
             out[i] = y * 0.5f;
         }
@@ -663,30 +661,38 @@ static void part_render(voice_t *v, const float *eff, float f, float *out, int n
 }
 
 /* --------------------------------------------------- the synth voice --- */
-static void synth_voice_note_on(voice_t *v, int note, float vel, int legato)
+/* clear a voice's engine state for eng. The engines share one block of memory (a union), so only
+ * eng's own fields are seeded: writing another engine's fields would land on eng's phases and
+ * filter states as garbage numbers. */
+static void voice_engine_reset(voice_t *v, int eng)
+{
+    __builtin_memset(&v->e, 0, sizeof(v->e));
+    switch (eng) {
+    case ENG_VA: v->e.va.ns = v->rng | 1u; break;
+    case ENG_FM: v->e.fm.menv = 1.0f; break;
+    case ENG_PHYS: v->e.ph.ns = v->rng | 1u; break;
+    case ENG_FORMANT: v->e.fo.ns = v->rng | 1u; break;
+    case ENG_PARTICLE: v->e.pa.ns = v->rng | 1u; break;
+    default: break;
+    }
+    v->e_eng = (uint8_t)(eng + 1);
+}
+
+/* eng: the engine that will render the voice (a stolen voice may hold another engine's state) */
+static void synth_voice_note_on(voice_t *v, int note, float vel, int legato, int eng)
 {
     v->note = (int8_t)note;
     v->vel = vel;
     v->target = (float)note;
     if (!legato)
         v->pitch = (float)note;
-    if (!v->on) {
-        int8_t keep = v->note;
-        uint8_t *p = (uint8_t *)&v->e;
-        int i;
-        for (i = 0; i < (int)sizeof(v->e); i++)
-            p[i] = 0;
-        v->note = keep;
+    if (!v->on || v->e_eng != eng + 1) {
+        voice_engine_reset(v, eng);
         v->a.p = v->a.s = v->a.v = v->a.out = 0.0f;
         v->lad.s[0] = v->lad.s[1] = v->lad.s[2] = v->lad.s[3] = 0.0f;
         v->svf.ic1 = v->svf.ic2 = 0.0f;
         v->lpg = 0.0f;
-        v->e.va.ns = v->rng | 1u;
-        v->e.ph.ns = v->rng | 1u;
-        v->e.fo.ns = v->rng | 1u;
-        v->e.pa.ns = v->rng | 1u;
-        v->e.fm.menv = 1.0f;
-    } else {
+    } else if (eng == ENG_FM) {
         v->e.fm.menv = 1.0f;
     }
     v->on = 1;
@@ -704,6 +710,8 @@ static float synth_voice_render(voice_t *v, track_t *tr, float *out, int n, floa
     f = note_hz(v->pitch + eff[TP_PITCH] + eff[TP_FINE] * 0.01f + bend);
     if (f > 16000.0f)
         f = 16000.0f;
+    if (v->e_eng != eng + 1)                          /* the engine changed under a sounding voice */
+        voice_engine_reset(v, eng);
     switch (eng) {
     case ENG_VA: va_render(v, eff, f, buf, n); break;
     case ENG_PD: pd_render(v, eff, f, buf, n); break;
@@ -743,6 +751,7 @@ static float synth_voice_render(voice_t *v, track_t *tr, float *out, int n, floa
         default: y = svf_tick(&v->svf, x, 0, 0) * v->lpg; break;
         }
         y *= a * (1.0f - velamt + velamt * v->vel);
+        y = 2.0f * sat(y * 0.5f);                     /* a resonant filter or body driven hard: rounded, not runaway */
         out[i] += y;
         v->last = y;
         lvl = a;
