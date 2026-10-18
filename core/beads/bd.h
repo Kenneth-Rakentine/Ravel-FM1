@@ -1,5 +1,5 @@
 /* Beads, fixed point: Mutable Instruments Beads' grain and delay engine
- * rewritten in integer C for the M-VAVE FM-1 firmware.
+ * rewritten in integer C for Ravel, a firmware for the M-VAVE FM-1.
  *
  * Original: Copyright 2017-2021 Emilie Gillet, MIT licence (see LICENSE-beads).
  * Port: same structure and behaviour as beads/dsp (granular_processor.h,

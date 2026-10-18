@@ -1,6 +1,6 @@
-# FM-1 firmware (working name)
+# Ravel
 
-A custom firmware for the M-VAVE FM-1 that turns it into a pocket groovebox for sound design. It has 8 tracks that synthesize, catch what they play onto a shared tape, and cut it up and rebuild it, and the tracks can play, excite and reshape each other.
+Ravel is a custom firmware for the M-VAVE FM-1. It turns the FM-1 into a pocket groovebox for sound design. It has 8 tracks that synthesize, catch what they play onto a shared tape, and cut it up and rebuild it, and the tracks can play, excite and reshape each other.
 
 <p align="center">
   <img src="docs/signal-flow.svg" alt="Signal flow: synth, strike and tape tracks feed the mixer and buses; the mixer feeds the capture tape, which plays back into the tape tracks; an influence band connects every track to every other" width="760">
@@ -17,8 +17,6 @@ A custom firmware for the M-VAVE FM-1 that turns it into a pocket groovebox for 
 - **Envelope-first articulation:** onset, continuant and termination states drive level, filter and more from one gesture, plus a library of envelope shapes steps can recall.
 - **Sequencer:** parameter locks, microtiming, ratchets, a graph mode where cords set the playhead's path, René-style clocking, and a two-oscillator master clock.
 - **Song building:** patterns, scenes, clip launching and an arrangement.
-
-The full design is in the design doc (link to come).
 
 ## What's here so far
 
