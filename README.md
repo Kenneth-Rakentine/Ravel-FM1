@@ -6,52 +6,43 @@ Ravel is a custom firmware for the M-VAVE FM-1. It turns the FM-1 into a pocket 
   <img src="docs/signal-flow.svg" alt="Signal flow: synth, strike and tape tracks feed the mixer and buses; the mixer feeds the capture tape, which plays back into the tape tracks; an influence band connects every track to every other" width="760">
 </p>
 
-**Status: early, and playable.** The firmware builds for the FM-1 and runs in a desktop simulator and a browser emulator. It has one synth track (T1), one tape track (T7) with a fixed-point port of Mutable Instruments Beads, and a mixer. It has not been run on an FM-1 yet.
+**Status: playable in the emulator; the FM-1 build does not fit yet.** The whole instrument runs in the browser emulator and the desktop simulator, from the same C sources the firmware is built from. The FM-1 build (on M-VAVE's official FM1 Open SDK) compiles and links, but the app image is about 15 KB larger than the FM-1's app area, so there is no installable package yet. It has not been run on an FM-1.
 
 ## What it is
 
-- **Synth tracks** (T1 to T4): virtual analog with supersaw, phase distortion, FM, physical modelling and formant engines.
-- **Strike tracks** (T5, T6): percussion synthesis. An exciter (click, noise, metallic noise, FM burst or another track's audio) strikes ping filters, modal bodies, a struck disc or coupled strings, followed by ring mod and fold.
-- **Tape tracks** (T7, T8): no oscillator. They play a shared 192 KB capture tape with MLR-style playheads, through the Beads grain engine, or as slices played from the sequencer.
-- **Influence:** an 8 × 8 grid where any track can modulate, trigger, excite, jump the tape of, or clock any other track.
-- **Envelope-first articulation:** onset, continuant and termination states drive level, filter and more from one gesture, plus a library of envelope shapes steps can recall.
-- **Sequencer:** parameter locks, microtiming, ratchets, a graph mode where cords set the playhead's path, René-style clocking, and a two-oscillator master clock.
-- **Song building:** patterns, scenes, clip launching and an arrangement.
+- **Synth tracks** (T1 to T4), six engines: **VA** (saw to pulse, supersaw, sync, sub, noise, through-zero FM), **PD** (Casio-style phase distortion, 8 waves, foam sidebands, ring), **FM** (4 operators, 12 algorithms, a wave per operator), **PHYS** (string, bowed, blown, membrane), **FORMANT** (vowel filter bank or FOF grains), **PARTICLE** (pulsar emitters that pull into sync).
+- **Strike tracks** (T5, T6): an exciter (click, noise, metal, FM burst, dust, rain, bow, breath, or the audio input) strikes a body (ping filters, modal bars, a struck disc or coupled strings), with a transient layer, ring mod and a pitch drop.
+- **Tape tracks** (T7, T8): no oscillator. They play the shared 120 KB capture tape as **MLR** playheads (four rows, jumps on the keys, rates from -2× to 4×), through the **Beads** grain engine, or as **slices** found in what was caught.
+- **Capture tape:** records the master, one track, the buses or the audio input. **Catch** keeps what is on it, **resample** records a bar (or 2 or 4) onto row 1 on the downbeat, erosion and "dirty" half-rate µ-law for more time.
+- **Influence:** an 8 × 8 grid where any track can modulate, trigger, excite, ring, jump the tape of, or clock any other.
+- **Articulation:** onset, continuant and termination stages with curve, overshoot, a loop, a tail and **Give** (a spring that lets the level lag and bounce), two destinations, and a 256-shape envelope library that steps can recall.
+- **Sequencer:** per-track length, rate and direction, parameter locks, microtiming, ratchets with curves, conditions, chance, a **graph** mode where cords set the playhead's path (and a second head), density arcs, a sieve, scale quantizing, René-style clocking from LFOs or dust, and a two-oscillator master clock.
+- **Modulation:** two LFOs, dust, an 8-slot matrix and 4 macros with 8 destinations each (curves and windows).
+- **Buses:** an 8-band vocoder (its body is dust, drops, noise, the tape or a track), a feedback bus (filter, comb, smear, shift, fold or crush, returning to the master or into a track), a filter pair (series, parallel, feedback), a stereo delay with freeze, a space reverb, and master drive with microcuts and punch-in effects on the keys.
+- **Song:** patterns A and B per track, 16 scenes, a 32-row arrangement, mute and solo, tap tempo, 8 project slots.
 
-## What's here so far
+## Try it
+
+**In a browser:** open `ravel-emulator.html` (one file; build it with the steps below, or take it from the CI artifact). Sound starts on the first click or key. The page is an FM-1 on screen: MASTER, SELECT, PRESETS and ALGORITHM on the left, the screen, KNOB 1 to 4, the two button rows and the keys, with a side panel for the project, transport, tracks, sounds, audio input and the controls guide. Computer keys A to ; play notes, [ and ] change the octave, Space plays, 1 to 8 pick the track, arrows turn SELECT. Right-click (or shift-click) a button to hold it.
+
+**How the panel is laid out:** each button opens a section (HOME, VOICE, ARTICULATION, MOD, BUSES, SCALE, TAPE, SEQ, SONG, SAVE); SELECT walks its pages, ALGORITHM picks the track, PRESETS browses what the page holds, KNOB 1 to 4 set the four values shown. Holding a button gives its layer: SEQ turns the keys into steps (hold a step and turn a knob to lock), LFO puts the macros on the knobs, FX puts punch-in effects on the keys, ARP the tape, GLO mute and solo, SAVE stores scenes, SCL sets the root, REC + OCT- catches and REC + OCT+ resamples.
+
+## What's here
 
 | Path | What |
 | --- | --- |
-| `firmware/src/app/` | Ravel itself: the engine (`engine.c`), the screen and controls (`ui.c`) |
-| `firmware/src/platform/`, `firmware/src/*.c`, `firmware/hal/`, `firmware/loader/` | The FM-1 platform layer, update loader and drivers, from X0X (see Credits) |
-| `core/beads/` | Beads' grain and delay engine, rewritten in integer C for the FM-1 (MIT, see `LICENSE-beads`) |
+| `firmware/app/` | Ravel: the engine (`rv_engine.c`), synth engines (`rv_synth.c`), strike (`rv_strike.c`), tape (`rv_tape.c`), buses (`rv_bus.c`), sequencer (`rv_seq.c`), modulation and clock (`rv_mod.c`), parameters, presets, projects, and the interface (`rv_ui.c`, `rv_gfx.c`). Portable C99, single-precision float, no C library. |
+| `firmware/board/` | The FM-1 side: `ravel_board.c` (Ravel's platform on the SDK's API, its hooks, the audio block) and board code from FM1 Open (audio interrupt, panel, screen, input wiring) |
+| `core/beads/` | Beads' grain engine rewritten in integer C (MIT, see `core/beads/LICENSE-beads`) |
 | `host/` | The simulator: the whole app on a desktop, driven by scripts, writing screenshots and WAV files |
 | `web/emu/` | The browser emulator: the same code compiled to WebAssembly, on a drawn FM-1 panel |
-| `tests/beads/` | Renders 13 test scenarios through the original float Beads and the port, and compares them |
-| `tests/scenarios/` | Simulator scripts that play the firmware and check what it does |
-| `tools/` | Firmware build (`build.py`), toolchain download, packaging and install tools, table and font generators |
-| `docs/` | The signal-flow diagram |
+| `tests/beads/` | Renders 13 scenarios through the original Beads and the port, and compares them |
+| `tests/scenarios/` | Simulator scripts that play the firmware and check it (`tour.rvl` visits every page) |
+| `tools/` | The FM-1 build (`build_fm1.py`, `fm1pack.py`), SDK and toolchain download, font and table generators |
 
-### What plays now
+## Building
 
-- **T1, synth:** four-voice virtual analog. A saw-to-square oscillator with detune, sub and noise, drive, and a lowpass filter. Articulation states (onset, continuant, termination) shape each note.
-- **T7, tape:** Beads on a 192 KB tape that records T1 or the master mix. 2.2 seconds clean (16-bit), longer at lower quality. **REC** catches the tape so the grains keep playing what it holds.
-- **Mixer:** level and pan for T1 and T7, master drive.
-- **Screen:** the track list with meters, the oscillator scope, the filter's response, the articulation path, and the tape's waveform with its grains moving over it.
-- **Saving:** **SAVE** keeps the sound in flash; it comes back on the next start.
-
-### The Beads port
-
-- **Coverage:** all of Beads' grain mode (32 grains, Time, Size, Shape, Pitch, Density with its regular, tapped, random and clocked modes, Random, freeze, feedback) and its delay mode (synced and free multitap delay, frozen slices). The tape can be 8-bit µ-law, 12-bit or 16-bit, mono or stereo.
-- **Left out:** the reverb, wow and flutter, and the wavetable synth mode, which this firmware doesn't use.
-- **Maths:** integers only. No floating point and no C library, so it builds for any 32-bit embedded target as it is.
-- **Memory:** about 21 KB of code and 6 KB of tables in flash, 3 KB of state, plus the tape buffer.
-- **Accuracy:** checked against the original, unchanged Beads code on every scenario. Level, loudness envelope and brightness all match; see `tests/beads/compare.py` for the thresholds.
-- **Cost:** about 600 to 1,600 instructions per sample on typical settings (measured on x86). A dense cloud of 32 overlapping grains costs about 6,000, which is the next thing to optimize.
-
-## Building and running
-
-The simulator (any Unix with a C compiler and Python with Pillow):
+The simulator (any Unix with a C compiler, and Python with Pillow):
 
 ```
 sh host/build_host.sh
@@ -66,14 +57,15 @@ node web/emu/test.mjs        # smoke test
 python3 web/emu/bundle.py    # build/web/ravel-emulator.html, one file to open in a browser
 ```
 
-The firmware (JieLi's clang for the AC791N):
+The FM-1 firmware, on Linux or macOS (JieLi's clang for the AC791N, and M-VAVE's FM1 Open SDK):
 
 ```
 sh tools/get_toolchain.sh ~/.jieli
-JIELI_TOOLCHAIN=~/.jieli/toolchain python3 tools/build.py
+sh tools/get_sdk.sh                                         # build/fm1_open, at a fixed commit
+JIELI_TOOLCHAIN=~/.jieli/toolchain python3 tools/build_fm1.py
 ```
 
-`build.py` builds the app (`build/ravel.bin`) and the update loader, and checks them: image size, RAM and pool use, no double-precision maths, hardware registers touched only in `hal/`. Making the installable package needs JieLi's AC79 SDK as well (`AC79_SDK=...`); without it the build stops before packaging.
+`build_fm1.py` does what the SDK's own `Build.ps1` does: it checks the SDK against its manifest, compiles with the SDK's flags, links against the SDK's library and linker script, checks the heap, SRAM placement and entry point, and packages `build/fm1/Ravel-FM1.fwsc` with `tools/fm1pack.py` (a Python port of the SDK's `Package.cs`). The update identity is `FM-1_8960002`.
 
 The Beads comparison:
 
@@ -83,18 +75,23 @@ make fetch    # clones the original Beads and stmlib for the reference
 make test
 ```
 
-The renders land in `tests/beads/out/` as WAV files: `<scenario>_ref.wav` is the original and `<scenario>_port.wav` the port.
+## The FM-1 build
 
-## Hardware
+Ravel runs as the app on M-VAVE's FM1 Open SDK. The SDK's control task calls Ravel's hooks (`groove_screen_init`, `groove_screen_control`); the audio interrupt asks Ravel for 128 frames at a time; controls, LEDs, the screen, flash and USB audio go through the SDK's API. The SDK's library brings the RTOS, USB, Bluetooth and the update path.
 
-The FM-1 has a JieLi AC791N with two cores and a single-precision FPU (float maths is fast; double is not available), 96 KB of main RAM, a 336 KB memory pool and 29 KB of low SRAM, 1 MB of flash, a 240 × 240 screen, 27 keys, 14 buttons and 7 endless encoders. Audio runs at 44,118 Hz. The current build uses 96 KB of flash for the app, 34 KB of RAM and 262 KB of the pool (the tape is most of that).
+- **Flash:** the SDK takes about 371 KB of the 454 KB app area, which leaves Ravel about 82 KB. Ravel is about 97 KB at `-Oz` with LTO, so it is **about 15 KB over**. The build stops with the size and keeps the ELF and map; the CI job reports it without failing.
+- **RAM:** Ravel uses about 257 KB of main RAM (the 120 KB tape is most of it) and the cache RAM for the delay line, leaving the SDK the 48 KB heap it needs.
+- **Not checked on hardware:** CPU load (the DSP at `-Oz` is slower than at `-O2`), the FPU state between the audio interrupt and the control task, and the package itself (`fm1pack.py` has not been compared byte for byte with `Package.cs` output).
+- **Not in this version:** Bluetooth audio and MIDI (Bluetooth is switched off), MIDI over USB, and tape punch-in. USB audio input feeds the tape and the strike exciter; the output is sent to USB as well.
+- **Beads on the FM-1:** grain mode only (no delay mode, which the delay bus covers), reading the shared tape. The emulator and simulator use the same options.
 
 ## Licence
 
-GPL-3.0 (see `LICENSE`), as required by the Felucca-family code it builds on. The Beads port in `core/beads/` keeps Mutable Instruments' MIT licence (see `core/beads/LICENSE-beads`). Files taken from other projects keep their original copyright notices.
+GPL-3.0 only (see `LICENSE`). Ravel's firmware sources also carry a permission to link with M-VAVE's FM1 binary SDK, the same one M-VAVE gives for its own app code (see `LICENSE-EXCEPTION.md`); a firmware package must include `firmware/board/FM1-APP-LICENSE.md` and `firmware/board/FM1-THIRD_PARTY.md`. The Beads port keeps Mutable Instruments' MIT licence. Third-party code is listed in `THIRD_PARTY.md`.
 
 ## Credits
 
 - Mutable Instruments (Émilie Gillet) for Beads.
-- [X0X](https://github.com/charlesvestal/fm1-x0x), a Felucca fork, for the platform layer, hardware drivers, update loader, safe mode, build and packaging tools, and the simulator's design.
+- M-VAVE for [FM1 Open](https://github.com/m-vave/fm1_open): the SDK, its board code and its packager.
+- [X0X](https://github.com/charlesvestal/fm1-x0x), a Felucca fork, for the simulator's design, its PNG writer and the toolchain script.
 - The authors of Felucca, JIANT, SLOOP and sloopDX for opening up the FM-1.

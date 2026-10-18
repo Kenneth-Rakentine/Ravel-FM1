@@ -6,10 +6,10 @@ set -e
 cd "$(dirname "$0")/../.."
 CC="${CC:-clang}"
 mkdir -p build/gen
-[ -f build/gen/felucca_font.h ] || python3 tools/gen_font.py build/gen/felucca_font.h >/dev/null
+[ -f build/gen/rv_font.h ] || python3 tools/gen_rv_font.py build/gen/rv_font.h >/dev/null
 $CC --target=wasm32 -nostdlib -ffreestanding -O2 -ffp-contract=off -std=gnu99 \
-    -Wall -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable \
-    -DRAVEL_HOST -DBD_NUM_GRAINS=16 -Ifirmware/src -Ifirmware/src/app -Ibuild/gen \
-    -Wl,--no-entry -Wl,--export-memory -Wl,-z,stack-size=262144 -Wl,--initial-memory=8388608 \
-    -o web/emu/ravel.wasm web/emu/ravel_web.c firmware/src/app/engine.c core/beads/bd.c core/beads/bd_tables.c
+    -Wall -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable \
+    -DBD_NUM_GRAINS=16 -DBD_NO_DELAY -DBD_READER_ONLY -Ifirmware/app -Ibuild/gen \
+    -Wl,--no-entry -Wl,--export-memory -Wl,-z,stack-size=524288 -Wl,--initial-memory=16777216 \
+    -o web/emu/ravel.wasm web/emu/ravel_web.c firmware/app/ravel_app.c core/beads/bd.c core/beads/bd_tables.c
 echo "web: web/emu/ravel.wasm ($(wc -c < web/emu/ravel.wasm) B)"

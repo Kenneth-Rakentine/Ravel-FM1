@@ -57,6 +57,7 @@ static inline int32_t smoothstep16(int32_t t) { return mul16(mul16(t, t), 3 * Q1
 static inline int32_t smoothstep15(int32_t t) { return mul15(mul15(t, t), 3 * Q15 - 2 * t); }
 
 /* stmlib::SoftClip on a Q15 sample */
+#ifndef BD_READER_ONLY
 static inline int32_t soft_clip(int32_t x) {
   int32_t ax = iabs(x), y;
   if (ax >= 3 * Q15) {
@@ -68,6 +69,7 @@ static inline int32_t soft_clip(int32_t x) {
   }
   return x < 0 ? -y : y;
 }
+#endif
 
 /* Beads' mu-law encoder (mu_law.h), unchanged */
 static inline uint8_t lin2mulaw(int16_t pcm_val) {
@@ -104,6 +106,7 @@ static inline int32_t pseudo_gaussian(bd_engine* e) {
 /* stmlib filters and small helpers                                          */
 /* ------------------------------------------------------------------------ */
 
+#ifndef BD_NO_DELAY
 /* HysteresisFilter */
 static inline int32_t hfilter(int32_t* state, int32_t value, int32_t threshold) {
   int32_t error = value - *state;
@@ -111,6 +114,7 @@ static inline int32_t hfilter(int32_t* state, int32_t value, int32_t threshold) 
   else if (error < -threshold) *state = value + threshold;
   return *state;
 }
+#endif
 
 /* HysteresisQuantizer2 */
 static void hq_init(bd_hquant* q, int num_steps, int32_t hysteresis, int symmetric) {
@@ -332,6 +336,7 @@ static void tape_reset(bd_tape* t) {
   t->frozen = 0;
   t->written_since_last_frozen = 0;
   t->duration = t->max_delay;
+  if (!t->items || t->max_delay <= 0) return;   /* (port) an engine set up to share another's tape */
   bd_frame zero = { 0, 0 };
   for (int32_t i = 0; i < t->max_delay + INTERP_TAIL; ++i) tape_store(t, i, zero);
   memset(t->freeze_tail, 0, FREEZE_TAIL * sizeof(bd_frame));
@@ -495,7 +500,7 @@ static void grain_fade_out(bd_grain* g, int32_t duration) {
 
 static void grain_start(bd_engine* e, bd_grain* g, int32_t delay_q10, int32_t speed_q10, int32_t duration_q8,
                         int32_t shape, int32_t gain_q15, int32_t pan_q16, int32_t frac_q16) {
-  const bd_tape* t = &e->tape;
+  const bd_tape* t = e->tp;
   int32_t cs = speed_q10 - (t->frozen ? 0 : 1024);
   int64_t delay = delay_q10 - (((int64_t)frac_q16 * cs) >> 16);
   if (cs != 0) {
@@ -668,7 +673,7 @@ static void player_render(bd_engine* e, const bd_trig_out* trig, const bd_params
     int32_t pan = Q16 / 2 + mul16(u - Q16 / 2, imin(mul16(pan_spread, v), Q16));
 
     const int32_t safety = SAFETY_ZONE + 1;
-    int32_t max_delay = e->tape.duration - 2 * safety;
+    int32_t max_delay = e->tp->duration - 2 * safety;
     /* argument order as GCC evaluates Beads' Start(...) call: right to left */
     int32_t shape = knob_simple(e, &prm->shape);
     int32_t duration = grain_duration_q8(p, size);
@@ -679,7 +684,7 @@ static void player_render(bd_engine* e, const bd_trig_out* trig, const bd_params
     grain_start(e, &p->grain[p->prio[0]], delay_q10, speed_q10, duration, shape, amplitude, pan, trig->fractional);
     sort_grain_list(p, prm->monophonic);
   }
-  for (int i = 0; i < BD_NUM_GRAINS; ++i) grain_render(&p->grain[i], &e->tape, out);
+  for (int i = 0; i < BD_NUM_GRAINS; ++i) grain_render(&p->grain[i], e->tp, out);
   ++p->grain_interval;
 }
 
@@ -860,6 +865,7 @@ static void trig_render(bd_engine* e, bd_seed_state seed, const uint8_t* externa
   }
 }
 
+#ifndef BD_NO_DELAY
 /* ------------------------------------------------------------------------ */
 /* Delay mode: clock, play heads, controller (delay_clock.cc,                */
 /* delay_controller.h/.cc)                                                   */
@@ -1188,7 +1194,7 @@ static void delayctl_render(bd_engine* e, bd_seed_state seed, const uint8_t* ext
 /* ------------------------------------------------------------------------ */
 
 static void multitap_render(bd_engine* e, const bd_taps* taps, int32_t speed, int32_t bandwidth, bd_frame* out) {
-  const bd_tape* t = &e->tape;
+  const bd_tape* t = e->tp;
   /* Cross-fade between the original and pitch-shifted delays. */
   int32_t gain = clampi((iabs(speed - Q16) - 655) * 100, 0, Q16);
   int64_t ml = 0, mr = 0;
@@ -1243,6 +1249,7 @@ static void multitap_render(bd_engine* e, const bd_taps* taps, int32_t speed, in
   out->r += mix.r + mul16(wr - mix.r, wet_amount);
 }
 
+#endif /* BD_NO_DELAY */
 /* ------------------------------------------------------------------------ */
 /* The processor (granular_processor.h, processor.cc)                        */
 /* ------------------------------------------------------------------------ */
@@ -1257,6 +1264,8 @@ void bd_configure_length(bd_engine* e, bd_res res, int mono, int32_t samples) {
   e->res = (uint8_t)res;
   e->mono = (uint8_t)(mono != 0);
   bd_tape* t = &e->tape;
+  e->tp = t;
+  e->reader = 0;
   t->res = e->res;
   t->mono = e->mono;
   t->items = e->buffer;
@@ -1268,7 +1277,9 @@ void bd_configure_length(bd_engine* e, bd_res res, int mono, int32_t samples) {
   int32_t sr = e->sample_rate;
   player_init(&e->player, sr);
   trig_init(&e->trig, sr);
+#ifndef BD_NO_DELAY
   delayctl_init(&e->delayctl, sr, t->max_delay);
+#endif
   memset(&e->multitap, 0, sizeof(e->multitap));
   e->bandwidth_cache = -1;
   memset(e->bandwidth_filter, 0, sizeof(e->bandwidth_filter));
@@ -1311,12 +1322,15 @@ static void granular_process(bd_engine* e, const bd_trig_out* triggers, const bd
   const int32_t max_feedback_gain = taps ? 98304 : 196608;   /* 1.5 : 3 */
   const int32_t lp_coefficient = kLpCoefficient[e->res];
   const int32_t soft_limit_gain = kSoftLimitGain[e->res];
+#ifndef BD_READER_ONLY
   const int32_t fb_gain = soft_limit_gain ? (int32_t)(((int64_t)max_feedback_gain << 16) / soft_limit_gain) : 0;
+#endif
 
   for (int i = 0; i < n; ++i) {
     fbv += fb_inc;
     bw += bw_inc;
     sp += sp_inc;
+#ifndef BD_READER_ONLY
     const int32_t fb = fbv;
     bd_frame input = in[i];
     bd_frame s = input;
@@ -1335,16 +1349,27 @@ static void granular_process(bd_engine* e, const bd_trig_out* triggers, const bd
       s.l = input.l + mul16(s.l - input.l, fb);
       s.r = input.r + mul16(s.r - input.r, fb);
     }
+#endif
     out[i].l = out[i].r = 0;
-    tape_write(&e->tape, s, freeze[i]);
+#ifndef BD_READER_ONLY
+    if (!e->reader) tape_write(e->tp, s, freeze[i]);
+#endif
     if (triggers) player_render(e, &triggers[i], p, &out[i]);
+#ifndef BD_NO_DELAY
     if (taps) multitap_render(e, &taps[i], sp, bw, &out[i]);
+#endif
 
     int32_t hl = svf_process(&e->dc_blocker[0], out[i].l, SVF_HP);
     int32_t hr = svf_process(&e->dc_blocker[1], out[i].r, SVF_HP);
     e->previous_sample.l += mul16(lp_coefficient, hl - e->previous_sample.l);
     e->previous_sample.r += mul16(lp_coefficient, hr - e->previous_sample.r);
   }
+#ifdef BD_READER_ONLY
+  (void)freeze; (void)in; (void)fbv; (void)max_feedback_gain; (void)soft_limit_gain;
+#endif
+#ifdef BD_NO_DELAY
+  (void)bw; (void)sp;
+#endif
   /* As in Beads, the speed and bandwidth ramps only move in delay mode. */
   if (taps) {
     e->bandwidth_ = bandwidth;
@@ -1357,7 +1382,12 @@ void bd_process(bd_engine* e, const bd_params* p, bd_seed_state seed, const uint
                 const uint8_t* freeze, const bd_frame* in, bd_frame* out, int n) {
   const int32_t sr = e->sample_rate;
   const int32_t max_transition = (sr * 3) / 2;   /* 1.5 s */
+#ifdef BD_NO_DELAY
+  /* a build without Beads' delay mode (BD_NO_DELAY: a small firmware) stays granular */
+  const int delay_mode = 0;
+#else
   const int delay_mode = e->transition > 0;
+#endif
   const int32_t threshold = delay_mode ? 64225 : 64881;   /* 0.98 : 0.99 */
   e->transition += p->size.base > threshold ? n : -n;
   e->transition = clampi(e->transition, -max_transition, max_transition);
@@ -1367,11 +1397,14 @@ void bd_process(bd_engine* e, const bd_params* p, bd_seed_state seed, const uint
   int32_t exp_fm = mul16(expo_fm_amount, p->density_cv);
 
   bd_trig_out triggers[BD_MAX_BLOCK];
+#ifndef BD_NO_DELAY
   bd_taps taps[BD_MAX_BLOCK];
   if (delay_mode) {
     delayctl_render(e, seed, gate_flags, freeze, p->density, lin_fm, exp_fm, &p->time, &p->shape, taps, n);
     granular_process(e, 0, taps, freeze, p, p->feedback, in, out, n);
-  } else {
+  } else
+#endif
+  {
     trig_render(e, seed, gate_flags, p->density, lin_fm, exp_fm, triggers, n);
     granular_process(e, triggers, 0, freeze, p, p->feedback, in, out, n);
   }
@@ -1387,6 +1420,7 @@ void bd_process(bd_engine* e, const bd_params* p, bd_seed_state seed, const uint
   int32_t dv = e->dry_, wv = e->wet_;
   for (int i = 0; i < n; ++i) {
     bd_frame d = in[i];
+#ifndef BD_READER_ONLY
     if (e->res == BD_RES_12) {
       d.l = (d.l / 8) * 8;
       d.r = (d.r / 8) * 8;
@@ -1394,6 +1428,7 @@ void bd_process(bd_engine* e, const bd_params* p, bd_seed_state seed, const uint
       d.l = bd_lut_ulaw_q15[lin2mulaw((int16_t)clip16(d.l))];
       d.r = bd_lut_ulaw_q15[lin2mulaw((int16_t)clip16(d.r))];
     }
+#endif
     dv += dry_inc;
     wv += wet_inc;
     out[i].l = mul16(dv, d.l) + mul16(wv, out[i].l);
@@ -1409,7 +1444,7 @@ void bd_process(bd_engine* e, const bd_params* p, bd_seed_state seed, const uint
 /* ------------------------------------------------------------------------ */
 
 int32_t bd_tape_peek(const bd_engine* e, int32_t delay) {
-  const bd_tape* t = &e->tape;
+  const bd_tape* t = e->tp;
   if (t->max_delay <= 0) return 0;
   int32_t i = (t->write_ptr + 1 + delay) % t->max_delay;
   if (i < 0) i += t->max_delay;
@@ -1427,4 +1462,57 @@ int bd_active_grains(const bd_engine* e, int32_t* delays, int32_t* levels, int m
     ++n;
   }
   return n;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Shared tape (Ravel, not in Beads): one tape written by its owner, read by   */
+/* any number of engines                                                     */
+/* ------------------------------------------------------------------------ */
+
+void bd_tape_setup(bd_tape* t, uint8_t* buffer, uint32_t buffer_bytes, bd_res res, int mono, int32_t samples) {
+  buffer_bytes &= ~7u;
+  t->res = (uint8_t)res;
+  t->mono = (uint8_t)(mono != 0);
+  t->items = buffer;
+  t->max_delay = bd_tape_samples(res, mono, buffer_bytes);
+  if (samples > 0 && samples < t->max_delay) t->max_delay = samples & ~1;
+  t->freeze_tail = (bd_frame*)(void*)(buffer + buffer_bytes - FREEZE_TAIL * sizeof(bd_frame));
+  tape_reset(t);
+}
+
+void bd_tape_clear(bd_tape* t) { tape_reset(t); }
+
+void bd_tape_write(bd_tape* t, bd_frame in, int frozen) { tape_write(t, in, frozen); }
+
+void bd_tape_put(bd_tape* t, int32_t delay, bd_frame s) {
+  if (t->max_delay <= 0) return;
+  int32_t i = (t->write_ptr + 1 + delay) % t->max_delay;
+  if (i < 0) i += t->max_delay;
+  tape_store(t, i, s);
+  if (i < INTERP_TAIL) tape_store(t, i + t->max_delay, s);
+}
+
+bd_frame bd_tape_at(const bd_tape* t, int32_t delay_q10) {
+  bd_frame z = { 0, 0 };
+  if (t->max_delay <= 4) return z;
+  int32_t lim = t->max_delay << 10;
+  delay_q10 += 1024;   /* tape_read counts from the slot before the newest */
+  delay_q10 %= lim;
+  if (delay_q10 < 0) delay_q10 += lim;
+  /* tape_read(d) reads the sample written d+1 writes ago; delay 0 = the newest */
+  return tape_read(t, delay_q10 >> 10, delay_q10 & 1023);
+}
+
+void bd_share_tape(bd_engine* e, bd_tape* shared) {
+  e->tp = shared;
+  e->reader = 1;
+  e->res = shared->res;
+  e->mono = shared->mono;
+  int32_t sr = e->sample_rate;
+  player_init(&e->player, sr);
+  trig_init(&e->trig, sr);
+#ifndef BD_NO_DELAY
+  delayctl_init(&e->delayctl, sr, shared->max_delay);
+#endif
+  memset(&e->multitap, 0, sizeof(e->multitap));
 }

@@ -7,14 +7,18 @@
  * Script, one command per line (# comments):
  *   wait MS                       run the device for MS milliseconds
  *   press BTN | release BTN | tap BTN
- *                                 (BTN: FX SEL ENV LFO EDIT GLO HOME SAVE ARP SEQ PLAY REC OCT- OCT+)
+ *                                 (BTN: OCT- OCT+ FX SCL ENV LFO EDIT GLO HOME SAVE ARP SEQ PLAY REC)
  *   key K down|up | tapkey K      (K: 0..26 = F3..G5)
- *   turn ENC N                    (ENC: SELECT ALGO PRESET K1 K2 K3 K4; N detents, one a frame)
+ *   turn ENC N                    (ENC: SELECT ALGO K1 K2 K3 K4 PRESET; N detents, one a frame)
+ *   input FILE.wav                play a 16-bit stereo WAV into the audio input (USB in on the FM-1)
  *   master N                      MASTER pot 0..4096
  *   wav FILE | wavstop            record the output
  *   shot FILE.png                 save the screen
  *   reboot                        start again from the simulated flash (what SAVE kept)
- *   expect param NAME VALUE       a parameter's value, by its screen name: exit 1 if not
+ *   expect tp T NAME VALUE        track T's (1..8) parameter, by its screen name
+ *   expect gp NAME VALUE          a global parameter
+ *   expect frozen 0|1             the tape is caught (1) or listening (0)
+ *   expect page TITLE             the page on screen
  *   expect peak_db_min DB         the output's peak since the last wav reached DB at least
  */
 #include <stdio.h>
@@ -23,6 +27,42 @@
 #include <math.h>
 
 #include "host_core.c"
+#include "../firmware/app/rv.h"
+const char *ui_page_title(void);
+
+/* ----------------------------------------------------------- input --- */
+static int16_t *in_pcm;
+static uint32_t in_frames, in_pos;
+static int host_audio_in(float *lr, int frames)
+{
+    int i;
+    if (!in_pcm || in_pos >= in_frames)
+        return 0;
+    for (i = 0; i < frames && in_pos < in_frames; i++, in_pos++) {
+        lr[2 * i] = in_pcm[2 * in_pos] / 32768.0f;
+        lr[2 * i + 1] = in_pcm[2 * in_pos + 1] / 32768.0f;
+    }
+    return i;
+}
+static void input_open(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    long n;
+    if (!f) {
+        fprintf(stderr, "cannot read %s\n", path);
+        return;
+    }
+    fseek(f, 0, SEEK_END);
+    n = ftell(f) - 44;
+    fseek(f, 44, SEEK_SET);
+    free(in_pcm);
+    in_pcm = malloc((size_t)(n > 0 ? n : 4));
+    in_frames = (uint32_t)(n > 0 ? n / 4 : 0);
+    if (fread(in_pcm, 1, (size_t)(n > 0 ? n : 0), f) != (size_t)(n > 0 ? n : 0))
+        in_frames = 0;
+    in_pos = 0;
+    fclose(f);
+}
 
 /* ---------------------------------------------------------- outputs --- */
 static FILE *wav;
@@ -70,7 +110,7 @@ static void wav_close(void)
     fwrite(&v, 4, 1, wav);
     {
         uint16_t fmt[2] = {1, 2};
-        uint32_t r[2] = {ENGINE_FS, ENGINE_FS * 4};
+        uint32_t r[2] = {44100u, 44100u * 4u};
         uint16_t al[2] = {4, 16};
         fwrite(fmt, 2, 2, wav);
         fwrite(r, 4, 2, wav);
@@ -103,7 +143,6 @@ static void png_write(const char *path)
         raw[n++] = 0;
         for (i = 0; i < 240; i++) {
             uint16_t p = fb[j * 240 + i];
-            p = (uint16_t)((p >> 8) | (p << 8));
             raw[n++] = (uint8_t)(((p >> 11) & 31) * 255 / 31);
             raw[n++] = (uint8_t)(((p >> 5) & 63) * 255 / 63);
             raw[n++] = (uint8_t)((p & 31) * 255 / 31);
@@ -166,9 +205,9 @@ static void png_write(const char *path)
 }
 
 /* ------------------------------------------------------------ script --- */
-static const char *const BTN_NAMES[NB] = {"FX", "SEL", "ENV", "LFO", "EDIT", "GLO", "HOME", "SAVE",
-                                          "ARP", "SEQ", "PLAY", "REC", "OCT-", "OCT+"};
-static const char *const ENC_NAMES[NE] = {"SELECT", "ALGO", "PRESET", "K1", "K2", "K3", "K4"};
+static const char *const BTN_NAMES[NB] = {"OCT-", "OCT+", "FX", "SCL", "ENV", "LFO", "EDIT", "GLO",
+                                          "HOME", "SAVE", "ARP", "SEQ", "PLAY", "REC"};
+static const char *const ENC_NAMES[NE] = {"SELECT", "ALGO", "K1", "K2", "K3", "K4", "PRESET"};
 
 static int find_name(const char *const *t, int n, const char *s)
 {
@@ -179,12 +218,25 @@ static int find_name(const char *const *t, int n, const char *s)
     return -1;
 }
 
-static int find_param(const char *s)
+static int find_tp(int t, const char *s)
 {
     int p;
-    for (p = 0; p < NPARAM; p++)
-        if (!strcmp(engine_param_info(p)->name, s))
+    for (p = 0; p < TP_N; p++) {
+        const rv_pinfo *pi = rv_pinfo_track(t, p);
+        if (pi->name && !strcmp(pi->name, s))
             return p;
+    }
+    return -1;
+}
+
+static int find_gp(const char *s)
+{
+    int g;
+    for (g = 0; g < GP_N; g++) {
+        const rv_pinfo *pi = rv_pinfo_global(g);
+        if (pi->name && !strcmp(pi->name, s))
+            return g;
+    }
     return -1;
 }
 
@@ -258,27 +310,54 @@ int main(int argc, char **argv)
         } else if (!strcmp(a, "reboot")) {
             held_btn = held_keys = 0;
             boot();
+        } else if (!strcmp(a, "input")) {
+            snprintf(path, sizeof path, "%s", b);
+            input_open(path);
         } else if (!strcmp(a, "expect")) {
-            if (!strcmp(b, "param")) {
-                char name[64], val[32];
-                int p;
-                if (sscanf(line, "%*s %*s %63s %31s", name, val) != 2 || (p = find_param(name)) < 0) {
-                    fprintf(stderr, "line %d: bad expect\n", lineno);
+            char w1[64] = "", w2[64] = "", w3[64] = "";
+            int got = -99999, want = 0;
+            sscanf(line, "%*s %*s %63s %63s %63s", w1, w2, w3);
+            if (!strcmp(b, "tp")) {
+                int t = atoi(w1) - 1, p = t >= 0 && t < 8 ? find_tp(t, w2) : -1;
+                if (p < 0) {
+                    fprintf(stderr, "line %d: no parameter %s\n", lineno, w2);
                     return 2;
                 }
-                if (eng_param[p] != atoi(val)) {
-                    printf("FAIL line %d: %s is %d, expected %s\n", lineno, name, eng_param[p], val);
+                got = rv.tp[t][p];
+                want = atoi(w3);
+            } else if (!strcmp(b, "gp")) {
+                int g = find_gp(w1);
+                if (g < 0) {
+                    fprintf(stderr, "line %d: no global %s\n", lineno, w1);
+                    return 2;
+                }
+                got = rv.gp[g];
+                want = atoi(w2);
+            } else if (!strcmp(b, "frozen")) {
+                got = rv_tape_frozen();
+                want = atoi(w1);
+            } else if (!strcmp(b, "page")) {
+                char title[64];
+                sscanf(line, "%*s %*s %63[^\n]", title);
+                if (strcmp(ui_page_title(), title)) {
+                    printf("FAIL line %d: page is %s, expected %s\n", lineno, ui_page_title(), title);
                     fails++;
                 }
+                continue;
             } else if (!strcmp(b, "peak_db_min")) {
                 float db = 20.0f * log10f(peak_out + 1e-9f);
                 if (db < atof(c)) {
                     printf("FAIL line %d: peak %.1f dB, expected at least %s dB\n", lineno, db, c);
                     fails++;
                 }
+                continue;
             } else {
                 fprintf(stderr, "line %d: unknown expect %s\n", lineno, b);
                 return 2;
+            }
+            if (got != want) {
+                printf("FAIL line %d: %s is %d, expected %d\n", lineno, line, got, want);
+                fails++;
             }
         } else {
             fprintf(stderr, "line %d: unknown command %s\n", lineno, a);

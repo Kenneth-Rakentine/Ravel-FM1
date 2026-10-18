@@ -18,6 +18,10 @@
 
 #include <stdint.h>
 
+/* Build options for a small firmware (Ravel's FM-1 build and its emulator):
+ *   BD_NO_DELAY      no delay mode: the engine stays granular at any SIZE
+ *   BD_READER_ONLY   every engine reads a shared tape (bd_share_tape) and never writes its own:
+ *                    no input stage (feedback, limiter, soft clip), and the input is silent */
 #ifndef BD_NUM_GRAINS
 #define BD_NUM_GRAINS 32        /* Beads uses 32; the firmware may use fewer */
 #endif
@@ -195,6 +199,8 @@ typedef struct {
   uint32_t buffer_bytes;
 
   bd_tape tape;
+  bd_tape* tp;                            /* the tape in use: &tape, or a shared one */
+  uint8_t reader;                         /* reads a shared tape and never writes it */
   bd_player player;
   bd_trigger trig;
   bd_delayctl delayctl;
@@ -242,6 +248,17 @@ void bd_process(bd_engine* e, const bd_params* p, bd_seed_state seed,
  * playing now, as delays in samples and levels in Q15. Returns the number of grains. */
 int32_t bd_tape_peek(const bd_engine* e, int32_t delay);
 int bd_active_grains(const bd_engine* e, int32_t* delays, int32_t* levels, int max);
+
+/* Shared tape (Ravel): a tape owned outside any engine. The owner writes it
+ * (bd_tape_write, or bd_tape_put to overwrite at a delay); engines attached with
+ * bd_share_tape read it and never write it (their feedback is the owner's job).
+ * Delays count back from the newest sample: 0 = just written. */
+void bd_tape_setup(bd_tape* t, uint8_t* buffer, uint32_t buffer_bytes, bd_res res, int mono, int32_t samples);
+void bd_tape_clear(bd_tape* t);
+void bd_tape_write(bd_tape* t, bd_frame in, int frozen);
+void bd_tape_put(bd_tape* t, int32_t delay, bd_frame s);
+bd_frame bd_tape_at(const bd_tape* t, int32_t delay_q10);
+void bd_share_tape(bd_engine* e, bd_tape* shared);
 
 /* Gate flags from a gate level, as stmlib's ExtractGateFlags. */
 static inline uint8_t bd_gate_flags(uint8_t previous, int high) {

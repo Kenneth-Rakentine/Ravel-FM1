@@ -31,7 +31,7 @@
     <rect x="96" y="276" width="236" height="64" rx="8"/>
   </g>
   <text x="112" y="117" font-weight="600" fill="#dde5de">Synth  T1 to T4</text>
-  <text x="112" y="139" font-size="12" fill="#8c998f">VA, PD, FM, PHYS, formant</text>
+  <text x="112" y="139" font-size="12" fill="#8c998f">VA, PD, FM, PHYS, formant, particle</text>
   <text x="112" y="209" font-weight="600" fill="#dde5de">Strike  T5, T6</text>
   <text x="112" y="231" font-size="12" fill="#8c998f">exciter into modes, strings, pings</text>
   <text x="112" y="301" font-weight="600" fill="#dde5de">Tape  T7, T8</text>
@@ -52,7 +52,7 @@
   <!-- tape -->
   <rect x="376" y="376" width="200" height="64" rx="8" fill="#d69a58" fill-opacity="0.16" stroke="#d69a58" stroke-width="2"/>
   <text x="392" y="401" font-weight="600" fill="#dde5de">Capture tape</text>
-  <text x="392" y="423" font-size="12" fill="#c9b08e">192 KB, 4 rows, 2 to 9 s</text>
+  <text x="392" y="423" font-size="12" fill="#c9b08e">120 KB, 4 rows, 1.4 to 5.5 s</text>
 
   <!-- connections -->
   <g fill="none" stroke="#8a8f98" stroke-width="1.25">

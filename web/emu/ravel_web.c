@@ -1,22 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-/* Ravel in a browser: the same app and simulated FM-1 as the desktop simulator (host/host_core.c),
- * built freestanding for WebAssembly (web/emu/build.sh). The page (index.html) drives it:
- *
- *   rv_boot()                 start from the simulated flash
- *   rv_run(ms)                run the device; returns the audio frames it made (rv_audio())
- *   rv_audio()                float stereo, interleaved, from the last rv_run
- *   rv_fb()                   the 240x240 RGB565 screen (byte-swapped, as the panel takes it)
- *   rv_set_buttons(mask) rv_set_keys(mask) rv_enc(role, detents) rv_set_master(0..4096)
- *   rv_leds_buttons() rv_leds_keys()
- *   rv_store(obj) rv_store_len(obj) rv_store_set_len(obj, n) rv_store_writes()
- *                             the flash objects, so the page can keep them between visits
- *   rv_param_count() rv_param(p) rv_param_name(p)
- */
+/* Ravel in a browser: the same instrument and simulated FM-1 as the desktop simulator
+ * (host/host_core.c), built freestanding for WebAssembly (web/emu/build.sh) and driven by
+ * the page (index.html). */
 #include <stdint.h>
 
 #define EXPORT(name) __attribute__((export_name(#name)))
 
-/* the C library the app needs: the compiler's built-ins call these */
+/* the C library the instrument needs: the compiler's built-ins call these */
 void *memset(void *d, int c, unsigned long n)
 {
     uint8_t *p = d;
@@ -57,8 +47,22 @@ int memcmp(const void *a, const void *b, unsigned long n)
 }
 
 #include "../../host/host_core.c"
+#include "../../firmware/app/rv.h"
 
-#define AUDIO_MAX 16384u                 /* frames: 370 ms, more than one rv_run makes */
+int ui_section(void);
+int ui_track(void);
+const char *ui_page_title(void);
+void ui_goto(int sec, int page);
+void ui_set_track(int t);
+int ui_octave(void);
+int ui_armed(void);
+int rv_preset_count(void);
+const char *rv_preset_name(int i);
+int rv_preset_kind(int i);
+void rv_preset_apply(int t, int i);
+
+/* ------------------------------------------------------------- audio --- */
+#define AUDIO_MAX 16384u
 static float audio[AUDIO_MAX * 2u];
 static uint32_t audio_n;
 
@@ -71,6 +75,27 @@ static void host_audio(const int32_t *blk, uint32_t n)
     }
 }
 
+/* audio coming in: the page writes a file's samples into this ring */
+#define IN_RING 32768u
+static float in_ring[IN_RING * 2u];
+static uint32_t in_w, in_r;
+static int host_audio_in(float *lr, int frames)
+{
+    int i;
+    for (i = 0; i < frames && in_r != in_w; i++, in_r++) {
+        lr[2 * i] = in_ring[2u * (in_r % IN_RING)];
+        lr[2 * i + 1] = in_ring[2u * (in_r % IN_RING) + 1u];
+    }
+    return i;
+}
+EXPORT(web_in_ptr) float *web_in_ptr(void) { return in_ring; }
+EXPORT(web_in_write_pos) uint32_t web_in_write_pos(void) { return in_w % IN_RING; }
+EXPORT(web_in_space) uint32_t web_in_space(void) { return IN_RING - 1u - (in_w - in_r); }
+EXPORT(web_in_commit) void web_in_commit(uint32_t n) { in_w += n; }
+EXPORT(web_in_ring) uint32_t web_in_ring(void) { return IN_RING; }
+EXPORT(web_in_clear) void web_in_clear(void) { in_r = in_w; }
+
+/* ---------------------------------------------------------- running --- */
 EXPORT(rv_boot) void rv_boot(void)
 {
     held_btn = held_keys = 0;
@@ -96,17 +121,70 @@ EXPORT(rv_enc) void rv_enc(int role, int32_t d)
 EXPORT(rv_set_master) void rv_set_master(uint32_t v) { master = v > 4096u ? 4096u : v; }
 EXPORT(rv_leds_buttons) uint32_t rv_leds_buttons(void) { return lit_btn; }
 EXPORT(rv_leds_keys) uint32_t rv_leds_keys(void) { return lit_keys; }
-EXPORT(rv_store) uint8_t *rv_store(uint32_t obj) { return obj < OBJ_NOBJ ? store[obj] : 0; }
-EXPORT(rv_store_len) int rv_store_len(uint32_t obj) { return obj < OBJ_NOBJ ? store_len[obj] : -1; }
-EXPORT(rv_store_set_len) void rv_store_set_len(uint32_t obj, int n)
+EXPORT(rv_sample_rate) uint32_t rv_sample_rate(void) { return 44100u; }
+
+/* flash slots, so the page can keep them between visits */
+EXPORT(rv_store) uint8_t *rv_store(uint32_t s) { return s < PLAT_SLOTS ? store[s] : 0; }
+EXPORT(rv_store_len) int rv_store_len(uint32_t s) { return s < PLAT_SLOTS ? store_len[s] : -1; }
+EXPORT(rv_store_set_len) void rv_store_set_len(uint32_t s, int n)
 {
-    if (obj < OBJ_NOBJ && n <= (int)PLAT_STORE_MAX)
-        store_len[obj] = n;
+    if (s < PLAT_SLOTS && n <= (int)PLAT_SLOT_MAX)
+        store_len[s] = n;
 }
 EXPORT(rv_store_writes) uint32_t rv_store_writes(void) { return store_writes; }
-EXPORT(rv_store_objects) uint32_t rv_store_objects(void) { return OBJ_NOBJ; }
-EXPORT(rv_store_max) uint32_t rv_store_max(void) { return PLAT_STORE_MAX; }
-EXPORT(rv_sample_rate) uint32_t rv_sample_rate(void) { return ENGINE_FS; }
-EXPORT(rv_param_count) int rv_param_count(void) { return NPARAM; }
-EXPORT(rv_param) int rv_param(int p) { return p >= 0 && p < NPARAM ? eng_param[p] : 0; }
-EXPORT(rv_param_name) const char *rv_param_name(int p) { return p >= 0 && p < NPARAM ? engine_param_info(p)->name : ""; }
+EXPORT(rv_store_slots) uint32_t rv_store_slots(void) { return PLAT_SLOTS; }
+EXPORT(rv_store_max) uint32_t rv_store_max(void) { return PLAT_SLOT_MAX; }
+
+/* ------------------------------------------------------ the instrument --- */
+EXPORT(web_track) int web_track(void) { return ui_track(); }
+EXPORT(web_set_track) void web_set_track(int t) { ui_set_track(t); }
+EXPORT(web_section) int web_section(void) { return ui_section(); }
+EXPORT(web_goto) void web_goto(int sec, int page) { ui_goto(sec, page); }
+EXPORT(web_page_title) const char *web_page_title(void) { return ui_page_title(); }
+EXPORT(web_kind) int web_kind(int t) { return rv.tp[t & 7][TP_KIND]; }
+EXPORT(web_engine) int web_engine(int t) { return rv.tp[t & 7][TP_ENGINE]; }
+EXPORT(web_src0) int web_src0(int t) { return rv.tp[t & 7][TP_S0]; }
+EXPORT(web_set_kind) void web_set_kind(int t, int kind, int engine) { rv_track_defaults(t & 7, kind, engine); }
+EXPORT(web_meter) float web_meter(int t) { return rv_live.meter[t & 7]; }
+EXPORT(web_master_l) float web_master_l(void) { return rv_live.master_l; }
+EXPORT(web_master_r) float web_master_r(void) { return rv_live.master_r; }
+EXPORT(web_playing) int web_playing(void) { return rv_live.playing; }
+EXPORT(web_armed) int web_armed(void) { return ui_armed(); }
+EXPORT(web_frozen) int web_frozen(void) { return rv_tape_frozen(); }
+EXPORT(web_transport) void web_transport(int run) { rv_transport(run); }
+EXPORT(web_catch) void web_catch(void) { rv_catch(); }
+EXPORT(web_resample) void web_resample(void) { rv_resample(); }
+EXPORT(web_all_off) void web_all_off(void) { rv_all_off(); }
+EXPORT(web_demo) void web_demo(int which)
+{
+    rv_transport(0);
+    rv_demo(which);
+}
+EXPORT(web_project_name) const char *web_project_name(void) { return rv.name; }
+EXPORT(web_tempo) int web_tempo(void) { return rv.gp[GP_TEMPO]; }
+EXPORT(web_bar) int web_bar(void) { return rv_live.bar; }
+EXPORT(web_beat) int web_beat(void) { return rv_live.beat; }
+EXPORT(web_step) int web_step(int t) { return rv_live.step[t & 7][0]; }
+EXPORT(web_mute) int web_mute(void) { return rv.mute; }
+EXPORT(web_set_mute) void web_set_mute(int m) { rv.mute = (uint8_t)m; }
+EXPORT(web_tape_seconds) float web_tape_seconds(void) { return rv_tape_seconds(); }
+EXPORT(web_kind_name) const char *web_kind_name(int k) { return rv_kind_names[k % KIND_N]; }
+EXPORT(web_engine_name) const char *web_engine_name(int e) { return rv_engine_names[e % ENG_N]; }
+EXPORT(web_sound_name) const char *web_sound_name(int t)
+{
+    const rv_pinfo *pi = rv_pinfo_track(t & 7, TP_S0);
+    int k = rv.tp[t & 7][TP_KIND];
+    if (k == KIND_SYNTH)
+        return rv_engine_names[rv.tp[t & 7][TP_ENGINE] % ENG_N];
+    return pi->names ? pi->names[rv.tp[t & 7][TP_S0] - pi->min] : "";
+}
+EXPORT(web_preset_count) int web_preset_count(void) { return rv_preset_count(); }
+EXPORT(web_preset_name) const char *web_preset_name(int i) { return rv_preset_name(i); }
+EXPORT(web_preset_kind) int web_preset_kind(int i) { return rv_preset_kind(i); }
+EXPORT(web_preset_apply) void web_preset_apply(int t, int i) { rv_preset_apply(t & 7, i); }
+EXPORT(web_cpu) uint32_t web_cpu(void) { return rv_live.voices_synth + rv_live.voices_strike; }
+EXPORT(web_gp) int web_gp(int g) { return g >= 0 && g < GP_N ? rv.gp[g] : 0; }
+EXPORT(web_gp_set) void web_gp_set(int g, int v) { rv_pid_set(PID_G(g), v); }
+EXPORT(web_gp_tapesrc) int web_gp_tapesrc(void) { return GP_TAPESRC; }
+EXPORT(web_gp_tapemon) int web_gp_tapemon(void) { return GP_TAPEMON; }
+EXPORT(web_gp_tempo) int web_gp_tempo(void) { return GP_TEMPO; }
