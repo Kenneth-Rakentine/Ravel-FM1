@@ -307,6 +307,8 @@ int main(int argc, char **argv)
         } else if (!strcmp(a, "shot")) {
             snprintf(path, sizeof path, "%s/%s", outdir, b);
             png_write(path);
+        } else if (!strcmp(a, "peakreset")) {
+            peak_out = 0;
         } else if (!strcmp(a, "reboot")) {
             held_btn = held_keys = 0;
             boot();
@@ -344,6 +346,16 @@ int main(int argc, char **argv)
                     fails++;
                 }
                 continue;
+            } else if (!strcmp(b, "peak_db_max")) {          /* since the last peakreset: quiet enough */
+                float db = 20.0f * log10f(peak_out + 1e-9f);
+                if (db > atof(c)) {
+                    printf("FAIL line %d: peak %.1f dB, expected at most %s dB\n", lineno, db, c);
+                    fails++;
+                }
+                continue;
+            } else if (!strcmp(b, "voices")) {               /* synth and strike voices sounding */
+                got = rv_live.voices_synth + rv_live.voices_strike;
+                want = atoi(w1);
             } else if (!strcmp(b, "peak_db_min")) {
                 float db = 20.0f * log10f(peak_out + 1e-9f);
                 if (db < atof(c)) {

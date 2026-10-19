@@ -69,8 +69,9 @@ static volatile uint32_t cq_w, cq_r;
 static void cmd(uint8_t op, int a, int b, int c)
 {
     uint32_t w = cq_w;
-    if (w - cq_r >= 128u)
-        return;                                     /* full: drop (a burst of knob moves) */
+    if (w - cq_r >= (op == C_MOTION ? 96u : 128u))
+        return;                                     /* full: drop. Knob motion gives way first, so a burst of
+                                                     * knob moves never costs a note-off (a hanging note) */
     cq[w & 127u].op = op;
     cq[w & 127u].a = (uint8_t)a;
     cq[w & 127u].b = (int16_t)b;
@@ -261,9 +262,11 @@ static void all_off_now(void)
             ss[i].gate = 0;
             artic_release(&ss[i].a, &ss[i].cfg);
         }
-    for (i = 0; i < RV_TRACKS; i++)
-        if (rv.tp[i][TP_KIND] == KIND_TAPE && rv.tp[i][TP_S0] != TAPE_MLR)
+    for (i = 0; i < RV_TRACKS; i++)                 /* the tape tracks too, MLR loops included: a key starts them again */
+        if (rv.tp[i][TP_KIND] == KIND_TAPE) {
             artic_release(&trk[i].tape.a, &trk[i].tape.cfg);
+            trk[i].tape.pend_pos = -1;
+        }
 }
 
 static void cmd_drain(void)

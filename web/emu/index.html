@@ -152,6 +152,7 @@ kbd { font: 500 11px var(--mono); border: 1px solid var(--line); border-radius: 
     <div class="logo">RAVEL <small id="ver">FM-1 EMULATOR</small></div>
     <div class="status"><span class="dot" id="sdot"></span><span id="status">Loading…</span></div>
     <div class="spacer"></div>
+    <button class="hbtn" id="manualbtn" title="The full manual, in a new tab">Manual</button>
     <button class="hbtn" id="panic" title="Stop the sequencer and release every note">Panic / stop all</button>
   </header>
 
@@ -239,7 +240,7 @@ kbd { font: 500 11px var(--mono); border: 1px solid var(--line); border-radius: 
 
   <div class="lower">
     <section class="card" aria-label="Controls guide">
-      <h2>Controls guide</h2>
+      <h2>Controls guide <button class="hbtn" id="manualbtn2" style="float:right">Full manual</button></h2>
       <div class="tabs" id="gtabs"></div>
       <div id="gbody"></div>
     </section>
@@ -254,6 +255,7 @@ kbd { font: 500 11px var(--mono); border: 1px solid var(--line); border-radius: 
 <script>
 "use strict";
 const WASM_B64 = "__RAVEL_WASM__";
+const MANUAL_B64 = "__RAVEL_MANUAL__";          /* the manual page, from README.md (web/emu/bundle.py) */
 /* buttons in Ravel's order (plat.h) */
 const BTN = ["OCT-","OCT+","FX","SCL","ENV","LFO","EDIT","GLO","HOME","SAVE","ARP","SEQ","PLAY","REC"];
 const BTN_FN = {FX:"buses",SCL:"scale",ENV:"articulate",LFO:"mod",EDIT:"voice",GLO:"song",HOME:"tracks",SAVE:"save",ARP:"tape",SEQ:"steps",PLAY:"start",REC:"record"};
@@ -473,6 +475,21 @@ $("loaddemo").addEventListener("click", () => { rv.web_demo(+$("demo").value); s
     b.addEventListener("click", () => rv && rv.web_goto(s, p)); g.appendChild(b);
   });
 }
+
+/* ------------------------------------------------------------ the manual */
+let manualUrl = null;
+function openManual(hash) {
+  if (!manualUrl) {
+    if (MANUAL_B64.startsWith("__")) manualUrl = "manual.html";   /* not bundled: the site's page beside it */
+    else {
+      const bytes = Uint8Array.from(atob(MANUAL_B64), c => c.charCodeAt(0));
+      manualUrl = URL.createObjectURL(new Blob([bytes], { type: "text/html" }));
+    }
+  }
+  window.open(manualUrl + (hash || ""), "_blank", "noopener");
+}
+$("manualbtn").addEventListener("click", () => openManual());
+$("manualbtn2").addEventListener("click", () => openManual());
 
 /* ------------------------------------------------------------- the guide */
 const GUIDE = {

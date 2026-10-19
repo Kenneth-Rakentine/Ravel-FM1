@@ -109,6 +109,7 @@ typedef struct {
     /* beads */
     int8_t beads;                   /* which grain engine, -1 = none */
     uint8_t gate_pending;
+    float free_g;                   /* Beads: the cloud's level with no note held (1 playing, 0 stopped) */
     artic_t a;
     artic_cfg_t cfg;
     float note_ofs;
@@ -173,4 +174,5 @@ typedef struct {
     uint32_t travelled[2];          /* steps each head has moved (its function generator's time) */
     int16_t pitch_reg;              /* the pitch a PITCH head set, for a GATE head to play */
     uint8_t pitch_set;
+    uint8_t tied;                   /* a tied note still sounding, + 1: it ends when the next note starts */
 } seqtrk_t;

@@ -16,7 +16,7 @@ jobs:
       - name: Tools
         run: |
           sudo apt-get install -y clang lld
-          pip install pillow
+          pip install pillow markdown
       - name: Build the WebAssembly emulator
         run: sh web/emu/build.sh
       - name: Smoke test
@@ -33,7 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Python packages (font generator)
-        run: pip install pillow
+        run: pip install pillow markdown
       - name: JieLi toolchain and the AC79 SDK files
         run: |
           sh tools/get_toolchain.sh "$HOME/.jieli"

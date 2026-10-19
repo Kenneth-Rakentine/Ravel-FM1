@@ -68,7 +68,7 @@ footer { margin-top: 40px; font: 400 12px var(--mono); color: var(--muted); bord
   <div class="actions">
     <a class="btn prime" href="emulator.html">Open the emulator<small>plays in your browser</small></a>
     <a class="btn" id="dl" href="install/">Install on the FM-1<small>web installer, over USB</small></a>
-    <a class="btn" id="manual" href="#">Read the manual<small>every page, knob and key</small></a>
+    <a class="btn" id="manual" href="manual.html">Read the manual<small>every page, knob and key</small></a>
   </div>
 
   <h2>What it is</h2>
@@ -108,9 +108,6 @@ footer { margin-top: 40px; font: 400 12px var(--mono); color: var(--muted); bord
     var owner = h.split(".")[0], repo = parts.length ? parts[0] : owner + ".github.io";
     var base = "https://github.com/" + owner + "/" + repo;
     document.getElementById("rel").href = base + "/releases";
-    document.getElementById("manual").href = base + "#the-manual";
-  } else {
-    document.getElementById("manual").href = "#install";
   }
 })();
 </script>

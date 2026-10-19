@@ -498,13 +498,14 @@ The tape is Ravel's memory: one short loop of audio that every tape track plays 
 
 | Key | Action |
 | --- | --- |
-| Tap a white key | The playhead jumps to that sixteenth of the row and plays on (on the next step, beat or bar, set by JUMP) |
+| Tap a white key | The playhead jumps to that sixteenth of the row and plays on (while the sequencer runs, on the next step, beat or bar, set by JUMP; stopped, at once) |
 | Hold two white keys | Loops the span between them. Let go to play on. |
 | Black keys **1–4** | Switch to row 1, 2, 3 or 4 |
 | Black key **5** | Reverse on/off |
 | Black key **6** | Half speed (press again to slow further, down to ¼) |
 | Black key **7** | Double speed (up to 4×) |
 | Black key **8** | Hold / release: stop and start the playhead |
+| **PLAY** (stopping) | Stops the loops too; tap a key to start one again |
 | Black keys **9 / 10** | Catch / resample |
 | From any other page | Hold **ARP** and press white keys to jump |
 
@@ -512,7 +513,7 @@ The picture shows the whole tape, the four rows (the current one bright), the pl
 
 **BEADS:** the Mutable Instruments granular engine, reading the tape.
 
-- Keys play pitched grain clouds.
+- Keys play pitched grain clouds. While the sequencer runs, the cloud also plays on its own; when you stop, it fades out within a fraction of a second, and only the keys play it.
 - TIME scans through the row, SIZE and SHAPE set each grain, DENSITY sets how many, and RANDOM scatters them.
 - FEEDBK and MIX turn it into a smeared, blooming texture.
 
@@ -555,7 +556,7 @@ Editing a held empty step switches it on.
 | --- | --- | --- | --- | --- |
 | **STEPS** | NOTE | VELO | LENGTH: in eighths of a step (8 = one step, "7 1/2") | CHANCE: 0–100 % that it plays |
 | **STEP TIMING** | MICRO: nudge −6 to +12 (in 24ths of a step) | RATCHET: 1–8 repeats within the step | R CURVE: EVEN, FASTER, SLOWER; "-F" versions fade out | CONDITN, see below |
-| **STEP SHAPE** | ENV: library shape (0 = the track's own) | CUT: NONE, LOOP, REVERSE, STUTTER (a master microcut on this step) | TIE: ON holds the note into the next | – |
+| **STEP SHAPE** | ENV: library shape (0 = the track's own) | CUT: NONE, LOOP, REVERSE, STUTTER (a master microcut on this step) | TIE: ON holds the note until the track's next note starts | – |
 | **TRACK** | MODE: **STEPS** or **GRAPH** | LENGTH: 1–64 | RATE: ¼× to 4× the master clock | CLOCK: MASTER, LFO1, LFO2, DUST |
 | **DIRECTION** (steps mode) | FWD, REV, PINGPONG, SNAKE (rows of four, walked back and forth) | – | – | – |
 

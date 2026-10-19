@@ -34,6 +34,9 @@ def main(argv):
     (out / "docs").mkdir(parents=True)
     shutil.copy(SRC / "site" / "index.html", out / "index.html")
     shutil.copy(emu, out / "emulator.html")
+    manual = emu.parent / "ravel-manual.html"        # made beside the emulator by web/emu/bundle.py
+    if manual.exists():
+        shutil.copy(manual, out / "manual.html")
     shutil.copy(SRC / "docs" / "signal-flow.svg", out / "signal-flow.svg")
     shutil.copytree(SRC / "docs" / "manual", out / "docs" / "manual")
     (out / ".nojekyll").write_text("")

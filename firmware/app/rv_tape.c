@@ -222,7 +222,7 @@ static void tape_track_jump(track_t *tr, int pos, int loop_to, int now)
     int mode = (int)(tr->eff[TP_S0] + 0.5f);
     if (mode != TAPE_MLR)
         return;
-    if (!now && (int)(tr->eff[TP_S4] + 0.5f) != 0) {
+    if (!now && (int)(tr->eff[TP_S4] + 0.5f) != 0 && rv_live.playing) {   /* (stopped, nothing to wait for) */
         tt->pend_pos = (int8_t)pos;
         tt->pend_loop = (int8_t)loop_to;
         return;
@@ -451,9 +451,12 @@ static float tape_track_render(track_t *tr, int t, float *out, int n, int beads_
         bd_process(&beads[beads_idx], &p, BD_SEED_ON, gates, frz, in, o, n);
         for (i = 0; i < n; i++) {
             float a = artic_tick(&tt->a, &tt->cfg), y = (float)(o[i].l + o[i].r) * (0.5f / 32768.0f);
-            /* without a held note the cloud plays at full level: the envelope shapes only played notes */
+            /* without a held note the cloud plays on its own while the sequencer runs, and fades out
+             * (about 0.2 s) when it stops: the envelope shapes only played notes. (Stopped, a free cloud
+             * listening to a tape that listens to it would go on forever, like a note that hangs.) */
+            tt->free_g += ((rv_live.playing ? 1.0f : 0.0f) - tt->free_g) * 0.0001f;
             if (tt->a.stage == AS_OFF)
-                a = 1.0f;
+                a = tt->free_g;
             y *= a * eff[TP_S12] * (1.0f / 127.0f);
             out[i] += y;
             lvl = a;

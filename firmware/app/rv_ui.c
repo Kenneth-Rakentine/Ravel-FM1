@@ -148,6 +148,7 @@ static struct {
     uint32_t step_key_held;                  /* step keys held (bit = white key index) */
     uint8_t step_turned;
     uint8_t key_note[NKEYS];
+    uint8_t key_trk[NKEYS];                  /* the track a key's note went to, + 1 (0: the key plays no note) */
     uint8_t cur_route, cur_mat, cur_macro, cur_row, cur_arr, cur_arc, cur_scene, cur_slot, save_action;
     uint16_t cur_lib;
     int16_t preset_idx[RV_TRACKS];
@@ -1047,6 +1048,28 @@ static void key_event(int k, int on)
     uint32_t btn = plat_buttons();
     int wi = white_index(k), bi = black_index(k), t = ui.track;
     int note = 53 + k + ui.octave * 12;
+    /* --- a key let go: whatever it started ends, whatever has changed since (the track, the page,
+     * a layer held) --- */
+    if (!on) {
+        if (ui.key_trk[k]) {                    /* its note, on the track it went to */
+            rv_live_note(ui.key_trk[k] - 1, ui.key_note[k], 0);
+            ui.key_trk[k] = 0;
+            return;
+        }
+        if (wi >= 0) {
+            ui.mlr_held &= ~(1u << wi);
+            if (ui.step_key_held & (1u << wi)) {   /* a step key: a tap toggles the step */
+                ui.step_key_held &= ~(1u << wi);
+                if (!ui.step_turned) {
+                    rv_step *s = step_ptr(ui.step_page * 16 + wi);
+                    s->flags ^= ST_ON;
+                    if ((s->flags & ST_ON) && s->vel == 0)
+                        s->vel = 100;
+                }
+                return;
+            }
+        }
+    }
     /* --- layers --- */
     if (btn & (1u << B_FX)) {                 /* punch-in effects on the white keys */
         if (wi >= 0 && wi < 8)
@@ -1109,16 +1132,8 @@ static void key_event(int k, int on)
                 ui.step_turned = 0;
                 ui.step_cur = (int16_t)si;
                 ui.btn_down_ms[0] = plat_ms();
-            } else {
-                rv_step *s = step_ptr(si);
-                ui.step_key_held &= ~(1u << wi);
-                if (!ui.step_turned) {          /* a tap toggles the step */
-                    s->flags ^= ST_ON;
-                    if ((s->flags & ST_ON) && s->vel == 0)
-                        s->vel = 100;
-                }
             }
-            return;
+            return;                             /* (let go: above) */
         }
         if (bi >= 0 && on) {
             if (bi < RV_PATTERNS) {
@@ -1146,10 +1161,8 @@ static void key_event(int k, int on)
                     rv_tape_jump(t, other < wi ? other : wi, other < wi ? wi : other);   /* two keys: loop the span */
                 else
                     rv_tape_jump(t, wi, -1);
-            } else {
-                ui.mlr_held &= ~(1u << wi);
             }
-            return;
+            return;                             /* (let go: above) */
         }
         if (bi >= 0 && on) {
             if (bi < 4) {
@@ -1194,12 +1207,11 @@ static void key_event(int k, int on)
     /* --- otherwise the keys play the track --- */
     if (on) {
         ui.key_note[k] = (uint8_t)clampi(note, 0, 127);
+        ui.key_trk[k] = (uint8_t)(t + 1);
         if (ui.sec == SEC_ARTIC && cur_page()->pic == PIC_LIB)
             rv_note(t, ui.key_note[k], 100);   /* (auditions with the track's own articulation) */
         else
             rv_live_note(t, ui.key_note[k], 100);
-    } else {
-        rv_live_note(t, ui.key_note[k], 0);
     }
 }
 

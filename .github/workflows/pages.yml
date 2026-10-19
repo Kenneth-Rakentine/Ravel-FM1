@@ -25,7 +25,7 @@ jobs:
       - name: Tools
         run: |
           sudo apt-get install -y clang lld
-          pip install pillow
+          pip install pillow markdown
       - name: Build the WebAssembly emulator
         run: sh web/emu/build.sh
       - name: Smoke test

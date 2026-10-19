@@ -330,6 +330,8 @@ static void step_fire(int t, int h, int si, uint32_t when)
         {
             event_t on = e, off = e;
             on.when = e.when + (uint32_t)(u * sd * (float)(cnt > 1 ? 1 : 0) * RV_FS);
+            if (s->flags & ST_TIE)
+                on.head |= 0x80u;                   /* tied: no note-off; the track's next note ends it */
             ev_push(&on);
             if (!(s->flags & ST_TIE)) {
                 off.type = EV_OFF;
@@ -495,6 +497,7 @@ static void seq_start(void)
     if (rv.gp[GP_SONGMODE] == 1 && rv.arr_len)
         pend_scene = (int8_t)rv.arr[0].scene;
     for (t = 0; t < RV_TRACKS; t++) {
+        sq[t].tied = 0;
         sq[t].step[0] = sq[t].step[1] = -1;
         sq[t].dir[0] = sq[t].dir[1] = 1;
         sq[t].next_at[0] = 0.0f;
@@ -518,6 +521,7 @@ static void seq_stop(void)
         for (k = 0; k < TP_N; k++)
             trk[t].lockon[k] = 0;
         rv_live.step[t][0] = rv_live.step[t][1] = -1;
+        sq[t].tied = 0;
     }
     all_off_now();
 }
@@ -539,9 +543,18 @@ static void seq_events(int n)
             if (playing)
                 head_advance(e.track, e.head & 1, e.when);
             break;
-        case EV_ON:
-            note_on_internal(e.track, e.note, e.vel, e.env, e.chain);
+        case EV_ON: {
+            seqtrk_t *q = &sq[e.track];
+            if (q->tied && q->tied - 1 == e.note) {
+                /* a tie into the same note carries on: no new attack */
+            } else {
+                note_on_internal(e.track, e.note, e.vel, e.env, e.chain);
+                if (q->tied)
+                    note_off_internal(e.track, q->tied - 1);   /* the tied note ends as the next begins */
+            }
+            q->tied = (uint8_t)((e.head & 0x80u) ? e.note + 1 : 0);
             break;
+        }
         case EV_OFF:
             note_off_internal(e.track, e.note);
             break;
