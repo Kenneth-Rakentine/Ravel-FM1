@@ -170,4 +170,7 @@ typedef struct {
     int16_t take_steps;
     int8_t held_note[16];           /* live notes being recorded: step they wrote, -1 none */
     uint32_t held_on[16];
+    uint32_t travelled[2];          /* steps each head has moved (its function generator's time) */
+    int16_t pitch_reg;              /* the pitch a PITCH head set, for a GATE head to play */
+    uint8_t pitch_set;
 } seqtrk_t;

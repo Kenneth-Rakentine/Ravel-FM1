@@ -25,7 +25,7 @@ static dcb_t master_dc[2];
 #ifndef RV_GUARD
 #define RV_GUARD 256.0f
 #endif
-int rv_fault_count, rv_fault_where;
+int rv_fault_count, rv_fault_where, rv_fault_track = -1;
 static void fault(int where)
 {
     rv_fault_count++;
@@ -611,7 +611,7 @@ static void render_sub(float *outl, float *outr, int n)
             if (ins)
                 x = lerpf(x, insert_tick(tr, ins, x, ia, ib), imix);
             if (ring > 0.001f)
-                x = lerpf(x, x * tr->ring[i] / ring, clampf(ring, 0.0f, 1.0f));
+                x = lerpf(x, x * sat(tr->ring[i] / ring), clampf(ring, 0.0f, 1.0f));   /* a bounded carrier: rings that feed each other cannot grow */
             x = dcb_tick(&tr->dc, x);
             if (!(x > -RV_GUARD && x < RV_GUARD)) {
                 x = 0.0f;
@@ -633,6 +633,7 @@ static void render_sub(float *outl, float *outr, int n)
         }
         if (chain_bad) {                             /* the chain blew up: clear its memory */
             fault(400 + ins);
+            rv_fault_track = t;
             __builtin_memset(&tr->dc, 0, sizeof(tr->dc));
             __builtin_memset(tr->comb, 0, sizeof(tr->comb));
             __builtin_memset(tr->smear, 0, sizeof(tr->smear));

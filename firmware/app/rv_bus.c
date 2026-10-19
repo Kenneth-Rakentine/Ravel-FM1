@@ -16,12 +16,16 @@ static float drop_env, drop_ph, drop_hz;
 static uint32_t voc_rng = 0x51ED27u, dust_rng2 = 0xC0FFEEu;
 static float voc_dust_acc;
 
+static int16_t voc_set_shift = -999, voc_set_q = -999;
 static void vocoder_setup(void)
 {
     int b;
+    float sh = fm_exp2f(rv.gp[GP_VOCSHIFT] * (1.0f / 12.0f)), qm = fm_exp2f((rv.gp[GP_VOCQ] - 64) * (1.0f / 40.0f));
+    voc_set_shift = rv.gp[GP_VOCSHIFT];
+    voc_set_q = rv.gp[GP_VOCQ];
     for (b = 0; b < 8; b++) {
-        svf_set(&voc_an[b], voc_hz[b], b < 5 ? 6.0f : 3.5f);
-        svf_set(&voc_sy[b], voc_hz[b], b < 5 ? 9.0f : 4.0f);
+        svf_set(&voc_an[b], voc_hz[b], (b < 5 ? 6.0f : 3.5f) * qm);
+        svf_set(&voc_sy[b], voc_hz[b] * sh, (b < 5 ? 9.0f : 4.0f) * qm);   /* SHIFT moves the voice's bands */
     }
     svf_set(&drop_f[0], 2400.0f, 3.0f);
     svf_set(&drop_f[1], 5200.0f, 2.0f);
@@ -33,6 +37,9 @@ static void vocoder_run(const float *in, const float *body_track, int n, float *
     int i, b, which = clampi(rv.gp[GP_VOCBODY], 0, 11);
     float rel = 0.0015f / (0.2f + rv.gp[GP_VOCREL] * (3.0f / 127.0f)), tilt = rv.gp[GP_VOCTILT] * (1.0f / 64.0f);
     float lvl = rv.gp[GP_VOCLEVEL] * (1.0f / 127.0f) * 3.0f;
+    float att = 0.2f / (1.0f + rv.gp[GP_VOCATK] * 0.5f);
+    if (voc_set_shift != rv.gp[GP_VOCSHIFT] || voc_set_q != rv.gp[GP_VOCQ])
+        vocoder_setup();
     for (i = 0; i < n; i++) {
         float body = 0.0f, y = 0.0f, x = in[i];
         switch (which) {
@@ -61,7 +68,7 @@ static void vocoder_run(const float *in, const float *body_track, int n, float *
             float bp, sb, a, w = 1.0f + tilt * ((float)b - 3.5f) * 0.25f;
             svf_tick(&voc_an[b], x, &bp, 0);
             a = fm_fabsf(bp);
-            voc_env[b] += (a - voc_env[b]) * (a > voc_env[b] ? 0.02f : rel);
+            voc_env[b] += (a - voc_env[b]) * (a > voc_env[b] ? att : rel);
             svf_tick(&voc_sy[b], body, &sb, 0);
             y += sb * voc_env[b] * (w > 0.0f ? w : 0.0f);
         }
@@ -211,6 +218,14 @@ static void feedback_run(const float *in, int n, float *out)
 static svf_t pair_f[2];
 static float pair_ph[2], pair_prev;
 
+/* one of the pair: low, band or high pass (TYPE 1, TYPE 2) */
+static float pair_tick(int k, float x)
+{
+    float bp, hp, lp = svf_tick(&pair_f[k], x, &bp, &hp);
+    int ty = rv.gp[k ? GP_PAIRT2 : GP_PAIRT1];
+    return ty == 0 ? lp : ty == 1 ? bp : hp;
+}
+
 /* in: mono; adds stereo to l, r */
 static void pair_run(const float *in, int n, float *l, float *r)
 {
@@ -228,19 +243,18 @@ static void pair_run(const float *in, int n, float *l, float *r)
     }
     for (i = 0; i < n; i++) {
         float b1, b2, x = in[i];
-        if (mode == 0) {                               /* series: low pass into band pass */
-            float a = svf_tick(&pair_f[0], x, 0, 0);
-            svf_tick(&pair_f[1], a, &b2, 0);
+        if (mode == 0) {                               /* series: filter 1 into filter 2 */
+            b2 = pair_tick(1, pair_tick(0, x));
             l[i] += b2 * lvl;
             r[i] += b2 * lvl;
         } else if (mode == 1) {                        /* parallel: one each side */
-            svf_tick(&pair_f[0], x, &b1, 0);
-            svf_tick(&pair_f[1], x, &b2, 0);
+            b1 = pair_tick(0, x);
+            b2 = pair_tick(1, x);
             l[i] += b1 * lvl;
             r[i] += b2 * lvl;
         } else {                                       /* feedback: each feeds the other */
-            svf_tick(&pair_f[0], x + pair_prev * res * 0.9f, &b1, 0);
-            svf_tick(&pair_f[1], b1, &b2, 0);
+            b1 = pair_tick(0, x + pair_prev * res * 0.9f);
+            b2 = pair_tick(1, b1);
             pair_prev = sat(b2);
             l[i] += b1 * lvl;
             r[i] += b2 * lvl;
@@ -274,26 +288,34 @@ static void delay_run(const float *in, int n, float *l, float *r)
         target = (float)RV_DELAY_SAMPLES / 1.5f - 4.0f;
     if (dly_t <= 0.0f)
         dly_t = target;
-    if (dly_freeze)
+    int frz = dly_freeze || rv.gp[GP_DLYFREEZE];
+    float spread = 1.0f + rv.gp[GP_DLYSPREAD] * (0.5f / 127.0f), wob = rv.gp[GP_DLYWOB] * (1.0f / 127.0f);
+    static float dly_wph;
+    if (frz)
         fb = 1.0f;
+    if (target * spread * 1.015f > (float)RV_DELAY_SAMPLES - 8.0f)
+        target = ((float)RV_DELAY_SAMPLES - 8.0f) / (spread * 1.015f);
     for (i = 0; i < n; i++) {
-        float rp, a, b, fr;
+        float rp, a, b, fr, tt;
         int32_t i0;
         dly_t += (target - dly_t) * 0.0005f;
-        rp = (float)dly_w - dly_t;
+        dly_wph += 0.55f * RV_DT;                      /* WOBBLE: a slow tape-like drift of the time */
+        dly_wph -= fm_floorf(dly_wph);
+        tt = dly_t * (1.0f + wob * 0.012f * sin_lut(dly_wph));
+        rp = (float)dly_w - tt;
         if (rp < 0.0f)
             rp += (float)RV_DELAY_SAMPLES;
         i0 = (int32_t)rp;
         fr = rp - (float)i0;
         a = (dly_buf[i0] + (dly_buf[(i0 + 1) % RV_DELAY_SAMPLES] - dly_buf[i0]) * fr) * (1.0f / 16384.0f);
-        rp = (float)dly_w - dly_t * 1.5f;
+        rp = (float)dly_w - tt * spread;               /* SPREAD: the right tap, from same time to 1.5x */
         if (rp < 0.0f)
             rp += (float)RV_DELAY_SAMPLES;
         i0 = (int32_t)rp;
         b = dly_buf[i0] * (1.0f / 16384.0f);
         dly_lp += (b - dly_lp) * tone;
         dly_fbv = dly_lp;
-        dly_buf[dly_w] = (int16_t)clampf(sat((dly_freeze ? 0.0f : in[i]) + dly_fbv * fb) * 16384.0f, -32000.0f, 32000.0f);
+        dly_buf[dly_w] = (int16_t)clampf(sat((frz ? 0.0f : in[i]) + dly_fbv * fb) * 16384.0f, -32000.0f, 32000.0f);
         dly_w = (dly_w + 1) % (int32_t)RV_DELAY_SAMPLES;
         l[i] += a * lvl;                              /* ping on the left, pong on the right */
         r[i] += dly_lp * lvl;
@@ -315,18 +337,27 @@ static void space_run(const float *in, int n, float *l, float *r)
     int i, k;
     float size = 0.45f + rv.gp[GP_REVSIZE] * (0.53f / 127.0f), damp = 0.15f + (127 - rv.gp[GP_REVDAMP]) * (0.8f / 127.0f);
     float g = 0.55f + size * 0.42f, lvl = rv.gp[GP_REVLEVEL] * (1.0f / 127.0f);
+    float dif = 0.15f + rv.gp[GP_REVDIFF] * (0.6f / 127.0f), modd = rv.gp[GP_REVMOD] * (10.0f / 127.0f);
+    float lowc = rv.gp[GP_REVLOW] > 0 ? rv_cut_hz(rv.gp[GP_REVLOW] * 0.55f) * 6.2832f * RV_DT : 0.0f;
+    static float rev_hp;
+    rev_mod += 0.4f * RV_DT * (float)n;               /* MOTION: the line lengths drift slowly */
+    rev_mod -= fm_floorf(rev_mod);
     for (i = 0; i < n; i++) {
         float x = in[i], o[REV_N], s, y;
-        /* input diffusion: two allpasses */
+        if (lowc > 0.0f) {                             /* LOW CUT on what goes in */
+            rev_hp += (x - rev_hp) * clampf(lowc, 0.0f, 0.9f);
+            x -= rev_hp;
+        }
+        /* input diffusion: two allpasses (DIFFUSE) */
         for (k = 0; k < 2; k++) {
             int L = k ? 337 : 211, ri = (rev_api[k] - L + 512) & 511;
-            float z = rev_ap[k][ri], v = x + z * 0.6f;
+            float z = rev_ap[k][ri], v = x + z * dif;
             rev_ap[k][rev_api[k]] = v;
-            x = z - v * 0.6f;
+            x = z - v * dif;
             rev_api[k] = (rev_api[k] + 1) & 511;
         }
         for (k = 0; k < REV_N; k++) {
-            int L = (int)((float)rev_len[k] * size), ri = rev_w[k] - L;
+            int L = (int)((float)rev_len[k] * size + modd * sin_lut(rev_mod + (float)k * 0.25f)), ri = rev_w[k] - L;
             if (ri < 0)
                 ri += 1024;
             o[k] = rev_buf[k][ri] * (1.0f / 16384.0f);
@@ -342,7 +373,6 @@ static void space_run(const float *in, int n, float *l, float *r)
         l[i] += (o[0] + o[2]) * lvl * 0.7f;
         r[i] += (o[1] + o[3]) * lvl * 0.7f;
     }
-    (void)rev_mod;
 }
 
 /* ---------------------------------------------------------- microcuts --- */

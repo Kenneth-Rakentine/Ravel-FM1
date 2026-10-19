@@ -291,6 +291,63 @@ void rv_demo(int which)
         rv.arr[0].scene = 0;
         rv.arr[0].bars = 16;
         rv.gp[GP_SONGMODE] = 1;
+    } else if (which == 3) {
+        /* GRAPH: the graph sequencer. T1's two heads split rhythm from melody: head 1 walks a
+         * short looping path and plays (GATE), head 2 wanders the long way round at a third of
+         * the speed, swelling faster and slower, and sets the pitch (PITCH). T2's head 1 rolls
+         * into its steps (a DECAY motion), and its head 2 plays T5's wood on its own path. */
+        static const uint8_t mel[16] = {60, 63, 67, 70, 72, 70, 67, 65, 63, 58, 60, 55, 67, 74, 72, 62};
+        name_set("GRAPH");
+        rv.gp[GP_TEMPO] = 96;
+        rv_preset_apply(0, find_preset("CZ BELL"));
+        rv_preset_apply(1, find_preset("SUB BASS"));
+        rv_preset_apply(4, find_preset("WOOD"));
+        rv_preset_apply(5, find_preset("METAL"));
+        for (s = 2; s < RV_TRACKS; s++)
+            if (s != 4 && s != 5)
+                rv.mute |= (uint8_t)(1u << s);
+        rv.tp[0][TP_LEN] = 16;
+        for (s = 0; s < 16; s++)
+            on(0, s, mel[s], 70 + (s * 37) % 50, 3);
+        st(0, 3)->to[0] = 1;                          /* cords (step + 1): steps 0-3 loop back to 0, */
+        st(0, 3)->to[1] = 8;                          /* or, every other time, out to 7 */
+        st(0, 11)->to[0] = 1;                         /* and 11 returns to 0 */
+        rv.tp[0][TP_SEQMODE] = SEQ_GRAPH;
+        rv.tp[0][TP_BRANCH] = 1;                      /* TURNS */
+        rv.tp[0][TP_H1ROLE] = 1;                      /* GATE */
+        rv.tp[0][TP_H2ROLE] = ROLE_PITCH;
+        rv.tp[0][TP_H2RATE] = 1;                      /* 1/3 */
+        rv.tp[0][TP_H2START] = 9;
+        rv.tp[0][TP_H2SHAPE] = FG_SWELL;
+        rv.tp[0][TP_H2DEPTH] = 48;
+        rv.tp[0][TP_H2CYCLE] = 12;
+        rv.tp[0][TP_REVS] = 70;
+        rv.tp[0][TP_DLYS] = 50;
+        rv.tp[1][TP_LEN] = 8;
+        on(1, 0, 36, 110, 4);
+        on(1, 3, 36, 80, 2);
+        on(1, 5, 43, 90, 2);
+        on(1, 6, 34, 100, 4);
+        st(1, 6)->to[1] = 1;
+        rv.tp[1][TP_SEQMODE] = SEQ_GRAPH;
+        rv.tp[1][TP_BRANCH] = 0;                      /* CHANCE */
+        rv.tp[1][TP_H1SHAPE] = FG_DECAY;
+        rv.tp[1][TP_H1DEPTH] = 63;
+        rv.tp[1][TP_H1CYCLE] = 8;
+        rv.tp[1][TP_H2ROLE] = ROLE_NOTES;
+        rv.tp[1][TP_H2TARGET] = 5;                    /* head 2 plays T5 */
+        rv.tp[1][TP_H2RATE] = 6;                      /* x2 */
+        rv.tp[1][TP_H2START] = 4;
+        rv.tp[1][TP_H2SHAPE] = FG_LFO1;
+        rv.tp[1][TP_H2DEPTH] = 40;
+        rv.tp[1][TP_H2COMB] = COMB_ADD;
+        rv.gp[GP_LFO1RATE] = 30;
+        rv.tp[5][TP_LEN] = 16;
+        on(5, 4, 74, 60, 2);
+        on(5, 12, 79, 50, 2);
+        rv.tp[5][TP_REVS] = 60;
+        rv.gp[GP_REVSIZE] = 100;
+        rv.gp[GP_DLYTIME] = 96;
     } else {
         name_set("BLANK");
     }

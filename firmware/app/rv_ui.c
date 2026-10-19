@@ -38,9 +38,10 @@ typedef struct { uint8_t kind; uint16_t id; } kb_t;
 /* pictures */
 enum { PIC_TRACKS, PIC_INFL, PIC_SOURCE, PIC_FILTER, PIC_SKIN, PIC_INSERT, PIC_MIX, PIC_ENV, PIC_LIB, PIC_MATRIX,
        PIC_LFO1, PIC_LFO2, PIC_DUST, PIC_MACRO, PIC_VOC, PIC_FB, PIC_PAIR, PIC_DELAY, PIC_SPACE, PIC_MASTER, PIC_SCALE,
-       PIC_TAPE, PIC_STEPS, PIC_GRAPH, PIC_MIXER, PIC_SCENES, PIC_ARR, PIC_ARCS, PIC_CLOCK, PIC_SAVE };
+       PIC_TAPE, PIC_STEPS, PIC_GRAPH, PIC_MOTION, PIC_MIXER, PIC_SCENES, PIC_ARR, PIC_ARCS, PIC_CLOCK, PIC_SAVE };
 /* when a page shows */
-enum { V_ALL, V_SRC0, V_SRC1, V_SRC2, V_SRC3, V_SYNTH, V_STRIKE, V_TAPE, V_MLR, V_BEADS, V_SLICE, V_NOTTAPE };
+enum { V_ALL, V_SRC0, V_SRC1, V_SRC2, V_SRC3, V_SYNTH, V_STRIKE, V_TAPE, V_MLR, V_BEADS, V_SLICE, V_NOTTAPE,
+       V_STEPSMODE, V_GRAPH, V_GRAPH2 };
 /* what PRESETS does on the page */
 enum { PR_NONE, PR_SOUND, PR_ROUTE, PR_MAT, PR_MACRO, PR_ROW, PR_PATTERN, PR_SCENE, PR_ARR, PR_ARC, PR_LIB, PR_SLOT, PR_STEPCUR };
 
@@ -88,14 +89,18 @@ static const page_t pages[] = {
     {SEC_MOD, V_ALL, PIC_MACRO, PR_MACRO, "MACRO", {XF(XF_DEST), XF(XF_START), XF(XF_END), XF(XF_CURVE)}},
     {SEC_MOD, V_ALL, PIC_MACRO, PR_MACRO, "MACRO WINDOW", {XF(XF_LO), XF(XF_HI), {K_GP, GP_MACRO1}, {K_GP, GP_MACRO2}}},
 
-    {SEC_BUS, V_ALL, PIC_VOC, PR_NONE, "VOCODER", {GP(GP_VOCBODY), GP(GP_VOCTILT), GP(GP_VOCREL), GP(GP_VOCLEVEL)}},
+    {SEC_BUS, V_ALL, PIC_DELAY, PR_NONE, "DELAY", {GP(GP_DLYTIME), GP(GP_DLYFB), GP(GP_DLYTONE), GP(GP_DLYLEVEL)}},
+    {SEC_BUS, V_ALL, PIC_DELAY, PR_NONE, "DELAY 2", {TP(TP_DLYS), GP(GP_DLYSPREAD), GP(GP_DLYWOB), GP(GP_DLYFREEZE)}},
+    {SEC_BUS, V_ALL, PIC_SPACE, PR_NONE, "SPACE", {GP(GP_REVSIZE), GP(GP_REVDAMP), GP(GP_REVLEVEL), TP(TP_REVS)}},
+    {SEC_BUS, V_ALL, PIC_SPACE, PR_NONE, "SPACE 2", {GP(GP_REVMOD), GP(GP_REVDIFF), GP(GP_REVLOW), NO}},
     {SEC_BUS, V_ALL, PIC_FB, PR_NONE, "FEEDBACK", {GP(GP_FBTIME), GP(GP_FBREGEN), GP(GP_FBPROC), GP(GP_FBAMT)}},
     {SEC_BUS, V_ALL, PIC_FB, PR_NONE, "FEEDBACK 2", {GP(GP_FBTUNE), GP(GP_FBCUT), GP(GP_FBEDGE), GP(GP_FBRET)}},
-    {SEC_BUS, V_ALL, PIC_FB, PR_NONE, "FEEDBACK 3", {GP(GP_FBLEVEL), NO, NO, NO}},
+    {SEC_BUS, V_ALL, PIC_FB, PR_NONE, "FEEDBACK 3", {GP(GP_FBLEVEL), TP(TP_FBS), NO, NO}},
     {SEC_BUS, V_ALL, PIC_PAIR, PR_NONE, "FILTER PAIR", {GP(GP_PAIRMODE), GP(GP_PAIRF1), GP(GP_PAIRF2), GP(GP_PAIRRES)}},
-    {SEC_BUS, V_ALL, PIC_PAIR, PR_NONE, "PAIR LFOS", {GP(GP_PAIRLFO1), GP(GP_PAIRLFO2), GP(GP_PAIRDEPTH), GP(GP_PAIRLEVEL)}},
-    {SEC_BUS, V_ALL, PIC_DELAY, PR_NONE, "DELAY", {GP(GP_DLYTIME), GP(GP_DLYFB), GP(GP_DLYTONE), GP(GP_DLYLEVEL)}},
-    {SEC_BUS, V_ALL, PIC_SPACE, PR_NONE, "SPACE", {GP(GP_REVSIZE), GP(GP_REVDAMP), GP(GP_REVLEVEL), NO}},
+    {SEC_BUS, V_ALL, PIC_PAIR, PR_NONE, "PAIR 2", {GP(GP_PAIRT1), GP(GP_PAIRT2), GP(GP_PAIRLEVEL), TP(TP_PAIRS)}},
+    {SEC_BUS, V_ALL, PIC_PAIR, PR_NONE, "PAIR LFOS", {GP(GP_PAIRLFO1), GP(GP_PAIRLFO2), GP(GP_PAIRDEPTH), NO}},
+    {SEC_BUS, V_ALL, PIC_VOC, PR_NONE, "VOCODER", {GP(GP_VOCBODY), GP(GP_VOCTILT), GP(GP_VOCLEVEL), TP(TP_VOC)}},
+    {SEC_BUS, V_ALL, PIC_VOC, PR_NONE, "VOCODER 2", {GP(GP_VOCATK), GP(GP_VOCREL), GP(GP_VOCSHIFT), GP(GP_VOCQ)}},
     {SEC_BUS, V_ALL, PIC_MASTER, PR_NONE, "MASTER", {GP(GP_MDRIVE), GP(GP_CUTSIZE), GP(GP_CUTREP), GP(GP_CUTMIX)}},
 
     {SEC_SCALE, V_ALL, PIC_SCALE, PR_NONE, "SCALE", {GP(GP_ROOT), GP(GP_SCALE), GP(GP_TRANSPOSE), TP(TP_SIEVE)}},
@@ -111,9 +116,13 @@ static const page_t pages[] = {
     {SEC_SEQ, V_ALL, PIC_STEPS, PR_PATTERN, "STEPS", {SF(SF_NOTE), SF(SF_VEL), SF(SF_LEN), SF(SF_CHANCE)}},
     {SEC_SEQ, V_ALL, PIC_STEPS, PR_PATTERN, "STEP TIMING", {SF(SF_MICRO), SF(SF_RATCHET), SF(SF_RCURVE), SF(SF_COND)}},
     {SEC_SEQ, V_ALL, PIC_STEPS, PR_PATTERN, "STEP SHAPE", {SF(SF_ENV), SF(SF_CUT), SF(SF_TIE), NO}},
-    {SEC_SEQ, V_ALL, PIC_STEPS, PR_PATTERN, "TRACK", {TP(TP_LEN), TP(TP_RATE), TP(TP_DIR), TP(TP_CLKSRC)}},
-    {SEC_SEQ, V_ALL, PIC_GRAPH, PR_STEPCUR, "GRAPH", {SF(SF_CORDA), SF(SF_CORDB), TP(TP_BRANCH), TP(TP_HEADS)}},
-    {SEC_SEQ, V_ALL, PIC_GRAPH, PR_STEPCUR, "HEAD 2", {TP(TP_H2RATE), TP(TP_H2START), TP(TP_DIR), NO}},
+    {SEC_SEQ, V_ALL, PIC_STEPS, PR_PATTERN, "TRACK", {TP(TP_SEQMODE), TP(TP_LEN), TP(TP_RATE), TP(TP_CLKSRC)}},
+    {SEC_SEQ, V_STEPSMODE, PIC_STEPS, PR_PATTERN, "DIRECTION", {TP(TP_DIR), NO, NO, NO}},
+    {SEC_SEQ, V_GRAPH, PIC_GRAPH, PR_STEPCUR, "GRAPH", {SF(SF_CORDA), SF(SF_CORDB), TP(TP_BRANCH), TP(TP_H2ROLE)}},
+    {SEC_SEQ, V_GRAPH, PIC_GRAPH, PR_STEPCUR, "HEAD 1", {TP(TP_H1ROLE), TP(TP_H1TRANS), TP(TP_H2ROLE), NO}},
+    {SEC_SEQ, V_GRAPH, PIC_MOTION, PR_NONE, "HEAD 1 MOTION", {TP(TP_H1SHAPE), TP(TP_H1DEPTH), TP(TP_H1CYCLE), TP(TP_H1COMB)}},
+    {SEC_SEQ, V_GRAPH2, PIC_GRAPH, PR_STEPCUR, "HEAD 2", {TP(TP_H2TARGET), TP(TP_H2RATE), TP(TP_H2START), TP(TP_H2TRANS)}},
+    {SEC_SEQ, V_GRAPH2, PIC_MOTION, PR_NONE, "HEAD 2 MOTION", {TP(TP_H2SHAPE), TP(TP_H2DEPTH), TP(TP_H2CYCLE), TP(TP_H2COMB)}},
 
     {SEC_SONG, V_ALL, PIC_MIXER, PR_NONE, "MIXER 1-4", {{K_TLEVEL, 0}, {K_TLEVEL, 1}, {K_TLEVEL, 2}, {K_TLEVEL, 3}}},
     {SEC_SONG, V_ALL, PIC_MIXER, PR_NONE, "MIXER 5-8", {{K_TLEVEL, 4}, {K_TLEVEL, 5}, {K_TLEVEL, 6}, {K_TLEVEL, 7}}},
@@ -245,6 +254,9 @@ static int page_visible(int i)
     case V_BEADS: return kind == KIND_TAPE && mode == TAPE_BEADS;
     case V_SLICE: return kind == KIND_TAPE && mode == TAPE_SLICE;
     case V_NOTTAPE: return kind != KIND_TAPE;
+    case V_STEPSMODE: return rv.tp[t][TP_SEQMODE] != SEQ_GRAPH && rv.tp[t][TP_DIR] != DIR_GRAPH;
+    case V_GRAPH: return rv.tp[t][TP_SEQMODE] == SEQ_GRAPH || rv.tp[t][TP_DIR] == DIR_GRAPH;
+    case V_GRAPH2: return (rv.tp[t][TP_SEQMODE] == SEQ_GRAPH || rv.tp[t][TP_DIR] == DIR_GRAPH) && rv.tp[t][TP_H2ROLE] != ROLE_OFF;
     default: return 1;
     }
 }
@@ -288,7 +300,7 @@ static int held_step(void)
 /* --------------------------------------------------- knob bindings --- */
 static const char *const rcurve_names[] = {"EVEN", "FASTER", "SLOWER", "EVEN-F", "FAST-F", "SLOW-F"};
 static const char *const cut_names[] = {"NONE", "LOOP", "REVERSE", "STUTTER"};
-static const char *const save_actions[] = {"SAVE", "LOAD", "DEMO 1", "DEMO 2", "INIT"};
+static const char *const save_actions[] = {"SAVE", "LOAD", "DEMO 1", "DEMO 2", "DEMO 3", "INIT"};
 static const char *const curve_names[] = {"LINEAR", "EXP", "LOG", "S"};
 static const char *const lib_names[] = {"ATTACK", "BODY", "DEATH"};
 
@@ -304,6 +316,14 @@ static kinfo_t kb_info(kb_t k)
     case K_TP:
         pi = rv_pinfo_track(ui.track, k.id);
         r.name = pi->name;
+        if (ui.sec == SEC_BUS && (k.id == TP_DLYS || k.id == TP_REVS || k.id == TP_FBS || k.id == TP_PAIRS || k.id == TP_VOC)) {
+            static char send[12];                    /* on a bus page a track's send reads as its own */
+            send[0] = 'T';
+            send[1] = (char)('1' + ui.track);
+            send[2] = 0;
+            sx_cat(send, " SEND");
+            r.name = send;
+        }
         r.min = pi->min;
         r.max = pi->max;
         r.fmt = pi->fmt;
@@ -422,7 +442,7 @@ static kinfo_t kb_info(kb_t k)
         break;
     case K_SAVE:
         r.name = "ACTION";
-        r.max = 4;
+        r.max = 5;
         r.fmt = PF_ENUM;
         r.names = save_actions;
         break;
@@ -969,9 +989,10 @@ static void save_do(void)
         break;
     case 2:
     case 3:
+    case 4:
         rv_transport(0);
-        rv_demo(ui.save_action - 2);
-        msg(ui.save_action == 2 ? "DEMO: RAVEL" : "DEMO: DUST");
+        rv_demo(ui.save_action == 4 ? 3 : ui.save_action - 2);
+        msg(ui.save_action == 2 ? "DEMO: RAVEL" : ui.save_action == 3 ? "DEMO: DUST" : "DEMO: GRAPH");
         break;
     default:
         rv_transport(0);
@@ -994,6 +1015,19 @@ static void section_open(int s)
     }
     if (s == SEC_SAVE)
         slots_refresh();
+    if (s == SEC_TAPE && rv.tp[ui.track][TP_KIND] != KIND_TAPE) {   /* TAPE plays a tape track */
+        int t;
+        for (t = 0; t < RV_TRACKS; t++)
+            if (rv.tp[t][TP_KIND] == KIND_TAPE) {
+                char b[24] = "T";
+                b[1] = (char)('1' + t);
+                b[2] = 0;
+                sx_cat(b, ": THE TAPE TRACK");
+                ui.track = (uint8_t)t;
+                msg(b);
+                break;
+            }
+    }
 }
 
 static int tape_track(void)
@@ -1410,9 +1444,15 @@ static void draw_footer(void)
     case PR_STEPCUR: hint = "PRESETS: STEP"; break;
     default:
         if (ui.sec == SEC_TAPE)
-            hint = rv.tp[ui.track][TP_KIND] == KIND_TAPE ? "KEYS JUMP  BLACK: ROW, MOVE, CATCH" : "BLACK 9 CATCH  10 RESAMPLE";
+            hint = rv.tp[ui.track][TP_KIND] != KIND_TAPE ? "BLACK 9 CATCH  10 RESAMPLE"
+                   : rv.tp[ui.track][TP_S0] == TAPE_MLR ? "TAP: JUMP  HOLD 2: LOOP  BLACK 1-4: ROW"
+                   : "KEYS PLAY THE TAPE TRACK";
         else if (ui.sec == SEC_HOME && pg->pic == PIC_TRACKS)
             hint = "ALGO: TRACK  PRESETS: SOUND";
+        else if (pg->pic == PIC_MOTION)
+            hint = "SHAPE MOVES THE HEAD'S SPEED";
+        else if (ui.sec == SEC_BUS)
+            hint = "SEND: THIS TRACK INTO THE BUS";
         break;
     }
     if (btn & (1u << B_SEQ))
@@ -2082,8 +2122,22 @@ static void pic_tape(void)
         r[5] = 0;
         g_text_r(232, PIC_Y + 112, &FONT_XS, r, C_TEAL);
     }
+    {
+        int loud = 0;
+        for (i = 0; i < 224; i++)
+            if (pk[i] > 8)
+                loud++;
+        if (loud < 6) {                              /* nothing on it yet: say how to fill it */
+            g_fill(16, PIC_Y + 40, 208, 40, C_BG);
+            g_frame(16, PIC_Y + 40, 208, 40, C_LINE);
+            g_text_c(120, PIC_Y + 46, &FONT_XS, "THE TAPE IS SILENT", C_INK);
+            g_text_c(120, PIC_Y + 62, &FONT_T, "PLAY, THEN HOLD REC AND PRESS OCT+", C_MID);
+        }
+    }
     if (!istape)
         g_text(8, PIC_Y + 126, &FONT_T, "PICK T7 OR T8 (ALGO) TO PLAY THE TAPE", C_DIM);
+    else if (rv.tp[t][TP_S0] == TAPE_MLR)
+        g_text(8, PIC_Y + 126, &FONT_T, "16 WHITE KEYS = 16 SPOTS IN THE ROW", C_DIM);
 }
 
 static void pic_steps(void)
@@ -2179,8 +2233,79 @@ static void pic_graph(void)
         if (i == rv_live.step[t][1])
             g_disc(xs[i], ys[i], 3, C_AMBER);
     }
-    if (rv.tp[t][TP_DIR] != DIR_GRAPH)
-        g_text_c(120, PIC_Y + 124, &FONT_T, "SET DIRECTN TO GRAPH TO FOLLOW THE CORDS", C_DIM);
+    if (rv.tp[t][TP_SEQMODE] != SEQ_GRAPH && rv.tp[t][TP_DIR] != DIR_GRAPH)
+        g_text_c(120, PIC_Y + 124, &FONT_T, "SET MODE TO GRAPH ON THE TRACK PAGE", C_DIM);
+    else {
+        static const char *const rn[] = {"OFF", "NOTES", "GATE", "PITCH"};
+        int r1 = clampi(rv.tp[t][TP_H1ROLE], 0, 2) + 1, r2 = clampi(rv.tp[t][TP_H2ROLE], 0, 3), tg = rv.tp[t][TP_H2TARGET];
+        char b[32] = "H1 ";
+        sx_cat(b, rn[r1]);
+        g_text(6, PIC_Y + 6, &FONT_T, b, C_WHITE);
+        if (r2) {
+            char c[32] = "H2 ";
+            sx_cat(c, rn[r2]);
+            if (tg > 0) {
+                int n = sx_cat(c, " T");
+                sx_int(c + n, tg);
+            }
+            g_text_r(234, PIC_Y + 6, &FONT_T, c, C_AMBER);
+        }
+    }
+}
+
+/* a playhead's function generator: its shape over a cycle, where the head is, and its rate now */
+static float fg_curve(int shape, float u)
+{
+    switch (shape) {
+    case FG_RISE: return u;
+    case FG_FALL: return 1.0f - u;
+    case FG_ARCH: return sin_lut(u * 0.5f);
+    case FG_DECAY: return fm_expf(-8.0f * u);
+    case FG_SWELL: return 0.5f - 0.5f * sin_lut(u + 0.25f);
+    default: return 0.0f;
+    }
+}
+
+static void pic_motion(void)
+{
+    int t = ui.track, h = cur_page()->k[0].id == TP_H2SHAPE ? 1 : 0, i, prev = 0;
+    int shape = clampi(rv.tp[t][h ? TP_H2SHAPE : TP_H1SHAPE], 0, FG_N - 1);
+    float base = rv.tp[t][h ? TP_H2RATE : TP_RATE], pos = rv_live.fg_pos[t][h];
+    uint16_t col = h ? C_AMBER : C_TEAL;
+    int x0 = 12, x1 = 228, yb = PIC_Y + 104, ht = 80;
+    char b[40];
+    (void)base;
+    g_hline(x0, yb, x1 - x0, C_LINE);
+    if (shape == FG_OFF) {
+        g_text_c(120, PIC_Y + 40, &FONT_XS, "NO MOTION: THE HEAD KEEPS ITS RATE", C_DIM);
+        g_text_c(120, PIC_Y + 58, &FONT_T, "SHAPE MOVES ITS RATE AGAINST THE CLOCK", C_DIM);
+        return;
+    }
+    if (shape >= FG_LFO1) {                          /* a modulator: its level now, as a bar */
+        int w = (int)(rv_live.fg[t][h] * (float)(x1 - x0));
+        g_fill(x0, yb - 30, w, 24, col);
+        g_frame(x0, yb - 30, x1 - x0, 24, C_LINE);
+    } else {
+        for (i = 0; i <= x1 - x0; i += 2) {
+            int y = yb - (int)(fg_curve(shape, (float)i / (float)(x1 - x0)) * (float)ht);
+            if (i)
+                g_line(x0 + i - 2, prev, x0 + i, y, col);
+            prev = y;
+        }
+        i = (int)(pos * (float)(x1 - x0));
+        g_vline(x0 + i, yb - ht, ht, C_DIM);
+        g_disc(x0 + i, yb - (int)(fg_curve(shape, pos) * (float)ht), 4, C_WHITE);
+    }
+    /* the rate now, as a multiple of the clock */
+    {
+        int c100 = (int)(rv_live.fg_rate[t][h] * 100.0f + 0.5f), n = sx_int(b, c100 / 100);
+        b[n++] = '.';
+        b[n++] = (char)('0' + (c100 / 10) % 10);
+        b[n++] = (char)('0' + c100 % 10);
+        b[n] = 0;
+    }
+    sx_cat(b, " STEPS PER PULSE");
+    g_text_c(120, PIC_Y + 112, &FONT_T, b, C_MID);
 }
 
 static void pic_mixer(void)
@@ -2331,6 +2456,7 @@ static void draw_picture(void)
     case PIC_TAPE: pic_tape(); break;
     case PIC_STEPS: pic_steps(); break;
     case PIC_GRAPH: pic_graph(); break;
+    case PIC_MOTION: pic_motion(); break;
     case PIC_MIXER: pic_mixer(); break;
     case PIC_SCENES: pic_scenes(); break;
     case PIC_ARR: pic_arr(); break;

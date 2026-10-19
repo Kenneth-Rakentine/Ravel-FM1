@@ -164,6 +164,7 @@ kbd { font: 500 11px var(--mono); border: 1px solid var(--line); border-radius: 
           <select id="demo" aria-label="Demo project">
             <option value="0">Demo: Ravel</option>
             <option value="1">Demo: Dust</option>
+            <option value="3">Demo: Graph</option>
             <option value="2">Blank project</option>
           </select>
           <button class="hbtn" id="loaddemo">Load</button>
@@ -281,10 +282,20 @@ function makeEnc(role, parent, label) {
   const turn = d => { if (!d || !rv) return; if (role >= 0) rv.rv_enc(role, d); angle += d * 15; cap.style.transform = `rotate(${angle}deg)`; };
   el.turn = turn;
   el.addEventListener("pointerdown", e => { active = true; y0 = e.clientY; acc = 0; el.setPointerCapture(e.pointerId); e.preventDefault(); });
-  el.addEventListener("pointermove", e => { if (!active) return; acc += y0 - e.clientY; y0 = e.clientY; const d = Math.trunc(acc / 7); if (d) { acc -= d * 7; turn(d); } });
+  /* SELECT, ALGORITHM and PRESETS step through pages, tracks and lists: they need a firmer turn per
+     click than the value knobs, or one trackpad swipe skips several pages */
+  const selector = role === 0 || role === 1 || role === 6, dragPx = selector ? 22 : 7, wheelPx = selector ? 90 : 30;
+  let wacc = 0;
+  el.addEventListener("pointermove", e => { if (!active) return; acc += y0 - e.clientY; y0 = e.clientY; const d = Math.trunc(acc / dragPx); if (d) { acc -= d * dragPx; turn(d); } });
   const end = () => { active = false; };
   el.addEventListener("pointerup", end); el.addEventListener("pointercancel", end);
-  el.addEventListener("wheel", e => { e.preventDefault(); turn(e.deltaY < 0 ? 1 : -1); }, { passive: false });
+  el.addEventListener("wheel", e => {
+    e.preventDefault();
+    const px = e.deltaMode === 1 ? e.deltaY * 30 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+    wacc -= px;
+    const d = Math.trunc(wacc / wheelPx);
+    if (d) { wacc -= d * wheelPx; turn(Math.max(-3, Math.min(3, d))); }
+  }, { passive: false });
   el.addEventListener("keydown", e => { if (e.key === "ArrowUp" || e.key === "ArrowRight") { turn(1); e.preventDefault(); } if (e.key === "ArrowDown" || e.key === "ArrowLeft") { turn(-1); e.preventDefault(); } });
   parent.appendChild(el);
   return el;
@@ -476,10 +487,10 @@ const GUIDE = {
 <tr><td>EDIT</td><td>Voice: sound, source pages, pitch, filter, skin, insert, mix, sends</td></tr>
 <tr><td>ENV</td><td>Articulation: onset, continuant, termination, destinations, the shape library</td></tr>
 <tr><td>LFO</td><td>Mod: matrix, LFO 1 and 2, dust, macros</td></tr>
-<tr><td>FX</td><td>Buses: vocoder, feedback, filter pair, delay, space, master</td></tr>
+<tr><td>FX</td><td>Buses: delay, space, feedback, filter pair, vocoder, master. Each bus page shows the current track's <b>SEND</b> into it.</td></tr>
 <tr><td>SCL</td><td>Scale, root, transpose and the track's note sieve</td></tr>
 <tr><td>ARP</td><td>Tape: capture, rows, and the tape track's playback (MLR, Beads, slices)</td></tr>
-<tr><td>SEQ</td><td>Steps, step timing, step shape, track, graph, second head</td></tr>
+<tr><td>SEQ</td><td>Steps, step timing, step shape, track (MODE: steps or graph), then direction, or the graph's heads and motion</td></tr>
 <tr><td>GLO</td><td>Song: mixers, scenes, arrangement, density arcs, clock</td></tr>
 <tr><td>SAVE</td><td>Projects: choose an action with KNOB 1, press SAVE twice to do it</td></tr>
 <tr><td>PLAY · REC</td><td>Start/stop · arm recording on the track (keys, knob moves and tape jumps)</td></tr></table>`,
@@ -493,8 +504,16 @@ const GUIDE = {
 <tr><td>SCL</td><td>A key sets the root.</td></tr>
 <tr><td>REC</td><td>OCT− catches the tape, OCT+ resamples on the next bar.</td></tr>
 <tr><td>ENV</td><td>With a step held, KNOB 1 picks its shape from the library.</td></tr></table>`,
-  "Tape": `<p>The tape always listens to its source (the master by default: KNOB 2 on ARP › CAPTURE). <b>Catch</b> keeps what it holds; <b>Resample</b> waits for the bar and records 2 bars into row 1.</p>
-<ul><li>A tape track in <b>MLR</b>: on the TAPE page the white keys jump to 16 positions; hold two to loop the span; black keys pick rows, reverse, halve, double, hold.</li>
+  "Tape": `<p><b>The tape</b> is one short loop of audio (1.4 s clean, up to 5.5 s DIRTY) that every tape track plays from. It always listens to its source (the master by default: ARP › CAPTURE, KNOB 2). Two ways to keep something on it:</p>
+<ul><li><b>Catch</b> (hold REC, press OCT−): freeze what it holds right now.</li>
+<li><b>Resample</b> (hold REC, press OCT+): at the next bar it records one bar (CAPTURE › BARS) into row 1, then freezes.</li></ul>
+<p>The tape is split into four <b>rows</b> (ARP › ROWS sets where each starts and ends). T7 and T8 are tape tracks; ARP opens the TAPE section on one of them.</p>
+<p><b>MLR</b> (a tape track's MODE): the row is laid across the 16 white keys.</p>
+<ul><li>Tap a key: the playhead jumps to that sixteenth of the row and plays on from there (on the step, beat or bar: PLAYBACK › JUMP).</li>
+<li>Hold two keys: it loops between them. Release to play on.</li>
+<li>Black keys 1–4 switch row; 5–8 reverse, half speed, double speed, hold; 9 catches, 10 resamples.</li>
+<li>From any other page, hold ARP and press white keys to jump.</li>
+<li>Steps on a tape track jump too: a step's note picks the position, so a pattern can cut the loop up.</li></ul>
 <li>In <b>Beads</b>: keys play pitched grain clouds from the tape; TIME, SIZE, SHAPE, PITCH, DENSITY.</li>
 <li>In <b>Slice</b>: the row is cut at its onsets and the keys and steps play the slices.</li>
 <li><b>Audio in</b>: play a file into the input and pick INPUT as the tape's source to catch it.</li></ul>`,
@@ -505,8 +524,21 @@ const GUIDE = {
 <tr><td>TAPE</td><td>a hit jumps the target's tape playhead (or catches the tape)</td></tr>
 <tr><td>CLOCK</td><td>the source's hits clock the target's sequencer, René-style</td></tr>
 <tr><td>RING</td><td>ring modulates the target with the source</td></tr></table>`,
+  "Graph": `<p>SEQ › TRACK › <b>MODE</b> switches a track between the step sequencer and the <b>graph</b>. In graph mode the steps sit in a circle and cords say where a playhead goes next.</p>
+<ul><li><b>GRAPH</b> page: hold a step (or pick it with PRESETS) and set CORD A and CORD B, the steps it can go to next. With two cords, BRANCH picks one: by chance, in turns, by an LFO, or by the head's MOTION.</li>
+<li><b>Two playheads</b> walk the same graph. HEAD 1 plays this track. HEAD 2 (off by default) can play this track or another (PLAYS), at its own rate and start step.</li>
+<li><b>Roles</b>: NOTES plays the step; PITCH only sets the pitch; GATE plays the pitch the other head set. Head 1 on GATE and head 2 on PITCH separate rhythm from melody, each on its own path and speed.</li>
+<li><b>MOTION</b> (Silt's function generator): a shape (rise, fall, arch, decay, swell, or LFO 1, LFO 2, dust) that moves the head's rate over CYCLE steps. DEPTH sets how far. COMBINE: <b>× clock</b> multiplies or divides the clock (up to two octaves); <b>+ clock</b> adds to it.</li></ul>`,
+  "FX": `<p>Each track sends into five buses; the buses' outputs go to the master. On every FX page the knob called <b>T1 SEND</b> (for the current track) sets how much of this track goes in; ALGORITHM picks the track.</p><table>
+<tr><td>DELAY</td><td>time (free, or synced above the middle), feedback, tone, level · send, stereo spread, wobble, freeze</td></tr>
+<tr><td>SPACE</td><td>size, damping, level, send · motion, diffusion, low cut</td></tr>
+<tr><td>FEEDBACK</td><td>a delay loop with a process inside (filter, comb, smear, shift, fold, crush), returned to the master or into a track</td></tr>
+<tr><td>FILTER PAIR</td><td>two filters (low, band or high pass) in series, parallel or feedback, each moved by its own LFO</td></tr>
+<tr><td>VOCODER</td><td>the track's sound shapes a body (dust, drops, noise, the tape or another track): attack, release, shift, narrow</td></tr>
+<tr><td>MASTER</td><td>drive and the microcuts</td></tr></table>
+<p>Hold FX for punch-ins on the white keys: loop, reverse, stutter, delay freeze, low pass, high pass, throw (everything into delay and space), fill.</p>`,
   "Steps": `<p>On SEQ the white keys are 16 steps (OCT± pages through 64). Tap a key to switch a step on or off; hold it and turn the knobs to edit it: note, velocity, length, chance, micro timing, ratchets, condition, library shape, microcut, tie, graph cords.</p>
-<p>TRACK sets length, rate, direction (forward, reverse, ping-pong, snake, graph) and the clock (master, LFOs, dust). PRESETS or the first two black keys switch patterns A and B.</p>`,
+<p>TRACK sets the MODE (steps or graph), length, rate and the clock (master, LFOs, dust); DIRECTION plays forward, reverse, ping-pong or snake. PRESETS or the first two black keys switch patterns A and B.</p>`,
 };
 {
   const tabs = $("gtabs"), body = $("gbody");

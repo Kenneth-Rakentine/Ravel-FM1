@@ -6,7 +6,7 @@ Ravel is a custom firmware for the M-VAVE FM-1. It turns the FM-1 into a pocket 
   <img src="docs/signal-flow.svg" alt="Signal flow: synth, strike and tape tracks feed the mixer and buses; the mixer feeds the capture tape, which plays back into the tape tracks; an influence band connects every track to every other" width="760">
 </p>
 
-**Status: playable in the emulator; the FM-1 build does not fit yet.** The whole instrument runs in the browser emulator and the desktop simulator, from the same C sources the firmware is built from. The FM-1 build (on M-VAVE's official FM1 Open SDK) compiles and links, but the app image is about 15 KB larger than the FM-1's app area, so there is no installable package yet. It has not been run on an FM-1.
+**Status: playable in the emulator; the FM-1 build does not fit yet.** The whole instrument runs in the browser emulator and the desktop simulator, from the same C sources the firmware is built from. The FM-1 build (on M-VAVE's official FM1 Open SDK) compiles and links, but the app image is about 20 KB larger than the FM-1's app area, so there is no installable package yet. It has not been run on an FM-1.
 
 ## What it is
 
@@ -16,9 +16,9 @@ Ravel is a custom firmware for the M-VAVE FM-1. It turns the FM-1 into a pocket 
 - **Capture tape:** records the master, one track, the buses or the audio input. **Catch** keeps what is on it, **resample** records a bar (or 2 or 4) onto row 1 on the downbeat, erosion and "dirty" half-rate µ-law for more time.
 - **Influence:** an 8 × 8 grid where any track can modulate, trigger, excite, ring, jump the tape of, or clock any other.
 - **Articulation:** onset, continuant and termination stages with curve, overshoot, a loop, a tail and **Give** (a spring that lets the level lag and bounce), two destinations, and a 256-shape envelope library that steps can recall.
-- **Sequencer:** per-track length, rate and direction, parameter locks, microtiming, ratchets with curves, conditions, chance, a **graph** mode where cords set the playhead's path (and a second head), density arcs, a sieve, scale quantizing, René-style clocking from LFOs or dust, and a two-oscillator master clock.
+- **Sequencer:** each track runs in **STEPS** or **GRAPH** mode. Steps: length, rate and direction, parameter locks, microtiming, ratchets with curves, conditions, chance. Graph (from Silt): cords set where a playhead goes next, two playheads walk the same graph, each playing notes, only the gate, or only the pitch (so rhythm and melody can take different paths), head 2 can play another track, and each head has a function generator (rise, fall, arch, decay, swell, or an LFO or dust) that moves its speed, times or plus the clock. Plus density arcs, a sieve, scale quantizing, René-style clocking from LFOs or dust, and a two-oscillator master clock.
 - **Modulation:** two LFOs, dust, an 8-slot matrix and 4 macros with 8 destinations each (curves and windows).
-- **Buses:** an 8-band vocoder (its body is dust, drops, noise, the tape or a track), a feedback bus (filter, comb, smear, shift, fold or crush, returning to the master or into a track), a filter pair (series, parallel, feedback), a stereo delay with freeze, a space reverb, and master drive with microcuts and punch-in effects on the keys.
+- **Buses:** a stereo delay (spread, wobble, freeze), a space reverb (motion, diffusion, low cut), a feedback bus (filter, comb, smear, shift, fold or crush, returning to the master or into a track), a filter pair (low, band or high pass each; series, parallel or feedback, with two LFOs), an 8-band vocoder (its body is dust, drops, noise, the tape or a track; attack, release, shift, width), and master drive with microcuts and punch-in effects on the keys. Each bus page shows the current track's send into it.
 - **Song:** patterns A and B per track, 16 scenes, a 32-row arrangement, mute and solo, tap tempo, 8 project slots.
 
 ## Try it
@@ -79,7 +79,7 @@ make test
 
 Ravel runs as the app on M-VAVE's FM1 Open SDK. The SDK's control task calls Ravel's hooks (`groove_screen_init`, `groove_screen_control`); the audio interrupt asks Ravel for 128 frames at a time; controls, LEDs, the screen, flash and USB audio go through the SDK's API. The SDK's library brings the RTOS, USB, Bluetooth and the update path.
 
-- **Flash:** the SDK takes about 371 KB of the 454 KB app area, which leaves Ravel about 82 KB. Ravel is about 97 KB at `-Oz` with LTO, so it is **about 15 KB over**. The build stops with the size and keeps the ELF and map; the CI job reports it without failing.
+- **Flash:** the SDK takes about 371 KB of the 454 KB app area, which leaves Ravel about 82 KB. Ravel is about 102 KB at `-Oz` with LTO, so it is **about 20 KB over**. The build stops with the size and keeps the ELF and map; the CI job reports it without failing.
 - **RAM:** Ravel uses about 257 KB of main RAM (the 120 KB tape is most of it) and the cache RAM for the delay line, leaving the SDK the 48 KB heap it needs.
 - **Not checked on hardware:** CPU load (the DSP at `-Oz` is slower than at `-O2`), the FPU state between the audio interrupt and the control task, and the package itself (`fm1pack.py` has not been compared byte for byte with `Package.cs` output).
 - **Not in this version:** Bluetooth audio and MIDI (Bluetooth is switched off), MIDI over USB, and tape punch-in. USB audio input feeds the tape and the strike exciter; the output is sent to USB as well.

@@ -63,7 +63,11 @@ enum {
     /* mixer */
     TP_LEVEL, TP_PAN, TP_FBS, TP_PAIRS, TP_DLYS, TP_REVS,
     /* sequencer */
-    TP_LEN, TP_RATE, TP_DIR, TP_SIEVE, TP_CLKSRC, TP_BRANCH, TP_HEADS, TP_H2RATE, TP_H2START,
+    TP_LEN, TP_RATE, TP_DIR, TP_SIEVE, TP_CLKSRC, TP_BRANCH, TP_H2ROLE, TP_H2RATE, TP_H2START,
+    /* the graph sequencer: mode, the two playheads and their function generators (Silt's
+     * traversal shapes, which move each head's rate against the clock) */
+    TP_SEQMODE, TP_H1ROLE, TP_H1SHAPE, TP_H1DEPTH, TP_H1CYCLE, TP_H1COMB, TP_H1TRANS,
+    TP_H2TARGET, TP_H2SHAPE, TP_H2DEPTH, TP_H2CYCLE, TP_H2COMB, TP_H2TRANS,
     TP_N
 };
 #define RV_TP 80                    /* room for more track parameters without moving pids */
@@ -83,6 +87,9 @@ enum {
     GP_ROW1S, GP_ROW1E, GP_ROW2S, GP_ROW2E, GP_ROW3S, GP_ROW3E, GP_ROW4S, GP_ROW4E,
     GP_MACRO1, GP_MACRO2, GP_MACRO3, GP_MACRO4,
     GP_SONGMODE, GP_INPUTLEVEL,
+    /* more of each bus */
+    GP_DLYSPREAD, GP_DLYWOB, GP_DLYFREEZE, GP_REVMOD, GP_REVDIFF, GP_REVLOW,
+    GP_VOCATK, GP_VOCSHIFT, GP_VOCQ, GP_PAIRT1, GP_PAIRT2,
     GP_N
 };
 #define RV_GP 96
@@ -95,7 +102,11 @@ enum { KIND_SYNTH, KIND_STRIKE, KIND_TAPE, KIND_N };
 enum { ENG_VA, ENG_PD, ENG_FM, ENG_PHYS, ENG_FORMANT, ENG_PARTICLE, ENG_N };
 enum { FT_LADDER, FT_LP, FT_BP, FT_HP, FT_LPG, FT_N };
 enum { INS_OFF, INS_COMB, INS_SHIFT, INS_CRUSH, INS_SMEAR, INS_N };
-enum { DIR_FWD, DIR_REV, DIR_PING, DIR_SNAKE, DIR_GRAPH, DIR_N };
+enum { DIR_FWD, DIR_REV, DIR_PING, DIR_SNAKE, DIR_GRAPH, DIR_N };   /* DIR_GRAPH: old projects; now TP_SEQMODE */
+enum { SEQ_STEPS, SEQ_GRAPH };
+enum { ROLE_OFF, ROLE_NOTES, ROLE_GATE, ROLE_PITCH };   /* what a playhead does at a step */
+enum { FG_OFF, FG_RISE, FG_FALL, FG_ARCH, FG_DECAY, FG_SWELL, FG_LFO1, FG_LFO2, FG_DUST, FG_N };
+enum { COMB_SCALE, COMB_ADD };                   /* function generator against the clock: times, or plus */
 enum { TAPE_MLR, TAPE_BEADS, TAPE_SLICE, TAPE_MODES };
 enum { EXC_CLICK, EXC_NOISE, EXC_METAL, EXC_FM, EXC_DUST, EXC_RAIN, EXC_BOW, EXC_BLOW, EXC_INPUT, EXC_N };
 enum { BODY_PING, BODY_MODAL, BODY_DISC, BODY_STRINGS, BODY_N };
@@ -152,7 +163,7 @@ typedef struct { uint8_t scene, bars; } rv_arrrow;
 
 /* ----------------------------------------------------------------- project --- */
 #define RV_MAGIC 0x4A505652u        /* "RVPJ" */
-#define RV_FORMAT 2
+#define RV_FORMAT 3                 /* 3: graph mode and heads, more bus controls (2 loads and is upgraded) */
 typedef struct {
     uint32_t magic, format;
     char name[12];
@@ -180,6 +191,9 @@ typedef struct {
     uint8_t stage[RV_TRACKS];              /* its stage: 0 onset, 1 continuant, 2 termination, 3 off */
     float stage_pos[RV_TRACKS];            /* 0..1 through the stage */
     int16_t step[RV_TRACKS][2];            /* playing step per head, -1 = none */
+    float fg[RV_TRACKS][2];                /* each head's function generator: value 0..1 */
+    float fg_pos[RV_TRACKS][2];            /* where in its cycle, 0..1 */
+    float fg_rate[RV_TRACKS][2];           /* the head's rate now, steps per clock pulse */
     uint8_t hit[RV_TRACKS];                /* counts up on each trigger (flash the screen) */
     uint8_t route_fire[RV_TRACKS][RV_TRACKS];
     float master_l, master_r;

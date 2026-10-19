@@ -21,6 +21,61 @@ static uint32_t song_bar;
 static uint8_t fill_on;
 static uint32_t seq_rng = 0x5EED5EEDu;
 static uint64_t turn_bits[RV_TRACKS];
+
+/* ------------------------------------------------- graph mode and heads --- */
+static int is_graph(int t) { return rv.tp[t][TP_SEQMODE] == SEQ_GRAPH || rv.tp[t][TP_DIR] == DIR_GRAPH; }
+static int head_role(int t, int h)
+{
+    if (h == 0)
+        return is_graph(t) ? clampi(rv.tp[t][TP_H1ROLE], 0, 2) + ROLE_NOTES : ROLE_NOTES;
+    return is_graph(t) ? clampi(rv.tp[t][TP_H2ROLE], 0, 3) : ROLE_OFF;
+}
+static const float head_rates[9] = {0.25f, 0.3333f, 0.5f, 0.6667f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f};
+
+/* a head's function generator (Silt's traversal shape): 0..1 over CYCLE steps travelled, or a
+ * modulator's level */
+static float fg_value(int t, int h, float *pos)
+{
+    int shape = clampi(rv.tp[t][h ? TP_H2SHAPE : TP_H1SHAPE], 0, FG_N - 1);
+    int cyc = clampi(rv.tp[t][h ? TP_H2CYCLE : TP_H1CYCLE], 2, 64);
+    float u = (float)(sq[t].travelled[h] % (uint32_t)cyc) / (float)cyc;
+    *pos = u;
+    switch (shape) {
+    case FG_RISE: return u;
+    case FG_FALL: return 1.0f - u;
+    case FG_ARCH: return sin_lut(u * 0.5f);
+    case FG_DECAY: return fm_expf(-8.0f * u);
+    case FG_SWELL: return 0.5f - 0.5f * sin_lut(u + 0.25f);
+    case FG_LFO1: return 0.5f + 0.5f * lfo[0].value;
+    case FG_LFO2: return 0.5f + 0.5f * lfo[1].value;
+    case FG_DUST: return clampf(dust_v, 0.0f, 1.0f);
+    default: return 0.0f;
+    }
+}
+
+/* a head's rate now, in steps per master clock pulse: its RATE, moved by its function generator,
+ * either times the clock (x CLOCK: up to two octaves faster or slower) or plus it (+ CLOCK) */
+static float head_rate(int t, int h)
+{
+    float r = head_rates[clampi(rv.tp[t][h ? TP_H2RATE : TP_RATE], 0, 8)], pos, v, d;
+    int shape = rv.tp[t][h ? TP_H2SHAPE : TP_H1SHAPE];
+    if (!is_graph(t) || shape == FG_OFF) {
+        rv_live.fg[t][h] = 0.0f;
+        rv_live.fg_rate[t][h] = r;
+        return r;
+    }
+    v = fg_value(t, h, &pos);
+    d = rv.tp[t][h ? TP_H2DEPTH : TP_H1DEPTH] * (1.0f / 64.0f);
+    if (rv.tp[t][h ? TP_H2COMB : TP_H1COMB] == COMB_ADD)
+        r = r + d * v * 2.0f;
+    else
+        r = r * fm_exp2f(d * v * 2.0f);
+    r = clampf(r, 0.03f, 8.0f);
+    rv_live.fg[t][h] = v;
+    rv_live.fg_pos[t][h] = pos;
+    rv_live.fg_rate[t][h] = r;
+    return r;
+}
 #define LATENCY_TICKS 6                             /* sequenced notes sound 6/24 step late: room for early micro */
 
 static void infl_fire(int a, int note, int vel, uint16_t chain, uint32_t when);
@@ -99,7 +154,7 @@ static int cond_pass(const rv_step *s, int t)
 /* the step a head goes to next */
 static int next_step(int t, int h, int cur)
 {
-    int len = clampi(rv.tp[t][TP_LEN], 1, RV_STEPS), dir = clampi(rv.tp[t][TP_DIR], 0, DIR_N - 1), n;
+    int len = clampi(rv.tp[t][TP_LEN], 1, RV_STEPS), dir = is_graph(t) ? DIR_GRAPH : clampi(rv.tp[t][TP_DIR], 0, DIR_N - 1), n;
     seqtrk_t *s = &sq[t];
     if (cur < 0) {                                  /* the first step */
         if (h == 1)
@@ -155,14 +210,18 @@ static int next_step(int t, int h, int cur)
         int a = st->to[0] ? st->to[0] - 1 : (cur + 1) % len;
         n = a;
         if (st->to[1]) {
-            int take2 = 0, br = clampi(rv.tp[t][TP_BRANCH], 0, 3);
+            int take2 = 0, br = clampi(rv.tp[t][TP_BRANCH], 0, 4);
             if (br == 0)
                 take2 = xs_uni(&seq_rng) < 0.5f;
             else if (br == 1) {
                 turn_bits[t] ^= (uint64_t)1 << cur;
                 take2 = (int)((turn_bits[t] >> cur) & 1u);
-            } else
+            } else if (br <= 3)
                 take2 = lfo[br - 2].value > 0.0f;
+            else {                                   /* MOTION: the head's function generator */
+                float pos;
+                take2 = fg_value(t, h, &pos) > 0.5f;
+            }
             if (take2)
                 n = st->to[1] - 1;
         }
@@ -188,6 +247,9 @@ static void step_fire(int t, int h, int si, uint32_t when)
     rv_step *s = &rv.pat[t][rv.pat_cur[t] % RV_PATTERNS].s[si];
     float sd = step_seconds(t), tick = sd * (1.0f / 24.0f);
     int k, note, cnt, curve, sw;
+    int role = head_role(t, h), tt = t;               /* head 2 may play another track */
+    if (h == 1 && rv.tp[t][TP_H2TARGET] > 0)
+        tt = clampi(rv.tp[t][TP_H2TARGET] - 1, 0, RV_TRACKS - 1);
     float quant = rv.gp[GP_QUANT] * 0.01f, micro, density;
     event_t e;
     if (h == 0) {                                   /* the locks hold for this step */
@@ -217,29 +279,40 @@ static void step_fire(int t, int h, int si, uint32_t when)
     micro = (float)s->micro * (1.0f - quant);
     sw = (si & 1) ? rv.gp[GP_SWING] : 0;
     e.when = when + (uint32_t)(((float)LATENCY_TICKS + micro) * tick * RV_FS + (float)sw * 0.005f * sd * RV_FS);
-    e.track = (uint8_t)t;
-    e.chain = (uint16_t)(1u << t);
+    e.track = (uint8_t)tt;
+    e.chain = (uint16_t)(1u << tt);
     e.env = s->env;
     e.step = (uint8_t)si;
     e.head = (uint8_t)h;
-    if (s->cut) {
+    if (s->cut && role != ROLE_PITCH) {
         e.type = EV_CUT;
         e.note = s->cut;
         ev_push(&e);
     }
-    if (s->flags & ST_JUMP) {
+    if ((s->flags & ST_JUMP) && role != ROLE_PITCH) {
         e.type = EV_JUMP;
         e.note = s->note;
         ev_push(&e);
         return;
     }
     note = s->note;
-    if (rv.tp[t][TP_KIND] != KIND_TAPE) {
+    if (rv.tp[tt][TP_KIND] != KIND_TAPE) {
         int sieve = clampi(rv.tp[t][TP_SIEVE], 1, 12);
+        if (is_graph(t))
+            note += rv.tp[t][h ? TP_H2TRANS : TP_H1TRANS];
         note += rv.gp[GP_TRANSPOSE];
         note = rv_quantize_note(note);
-        if (sieve > 1 && ((note - rv.gp[GP_ROOT]) % sieve + sieve) % sieve)
+        if (role == ROLE_PITCH) {                    /* a PITCH head only sets the pitch */
+            sq[t].pitch_reg = (int16_t)note;
+            sq[t].pitch_set = 1;
+            return;
+        }
+        if (role == ROLE_GATE && sq[t].pitch_set)    /* a GATE head plays the PITCH head's note */
+            note = sq[t].pitch_reg;
+        else if (sieve > 1 && ((note - rv.gp[GP_ROOT]) % sieve + sieve) % sieve)
             return;                                 /* the sieve: this track answers only notes that pass */
+    } else if (role == ROLE_PITCH) {
+        return;
     }
     cnt = (s->ratchet & 7) + 1;
     curve = (s->ratchet >> 3) & 3;
@@ -276,29 +349,35 @@ static int track_clocked_by_route(int t)
     return 0;
 }
 
-static void track_advance(int t, uint32_t when)
+/* one head moves one step and plays it */
+static void head_advance(int t, int h, uint32_t when)
 {
     seqtrk_t *s = &sq[t];
-    int h, heads = rv.tp[t][TP_DIR] == DIR_GRAPH ? clampi(rv.tp[t][TP_HEADS], 1, 2) : 1;
-    for (h = 0; h < heads; h++) {
-        if (h == 1) {
-            /* the second head runs at its own rate: a fraction of the first head's advances */
-            static const float rates[9] = {0.25f, 0.3333f, 0.5f, 0.6667f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f};
-            float r = rates[clampi(rv.tp[t][TP_H2RATE], 0, 8)];
-            s->next_at[1] += r;
-            while (s->next_at[1] >= 1.0f) {
-                s->next_at[1] -= 1.0f;
-                s->step[1] = (int16_t)next_step(t, 1, s->step[1]);
-                step_fire(t, 1, s->step[1], when);
-            }
-            continue;
-        }
-        s->step[0] = (int16_t)next_step(t, 0, s->step[0]);
+    s->step[h] = (int16_t)next_step(t, h, s->step[h]);
+    s->travelled[h]++;
+    if (h == 0) {
         s->step_time = when;
         s->step_dur = step_seconds(t);
         if (s->first_take)
             s->take_steps++;
-        step_fire(t, 0, s->step[0], when);
+    }
+    step_fire(t, h, s->step[h], when);
+}
+
+static int master_clocked(int t) { return rv.tp[t][TP_CLKSRC] == 0 && !track_clocked_by_route(t); }
+
+/* a track's step from another clock (an LFO, dust, a route): head 1 moves, and head 2 follows at
+ * its rate relative to head 1. On the master clock each head is scheduled on its own. */
+static void track_advance(int t, uint32_t when)
+{
+    seqtrk_t *s = &sq[t];
+    head_advance(t, 0, when);
+    if (head_role(t, 1) != ROLE_OFF && !master_clocked(t)) {
+        s->next_at[1] += head_rate(t, 1) / head_rate(t, 0);
+        while (s->next_at[1] >= 1.0f) {
+            s->next_at[1] -= 1.0f;
+            head_advance(t, 1, when);
+        }
     }
 }
 
@@ -366,16 +445,25 @@ static void seq_pulse(int off)
             tape_boundary(&trk[t], 2);
         if ((mpulse & 15) == 0)
             tape_boundary(&trk[t], 3);
-        if (rv.tp[t][TP_CLKSRC] != 0 || track_clocked_by_route(t))
+        if (!master_clocked(t))
             continue;
-        while (s->next_at[0] < mpulse_f + 1.0f) {
-            event_t e;
-            float d = (s->next_at[0] - mpulse_f) * clk_period;
-            e.type = EV_ADV;
-            e.track = (uint8_t)t;
-            e.when = base + (uint32_t)(d > 0.0f ? d * RV_FS : 0.0f);
-            ev_push(&e);
-            s->next_at[0] += 1.0f / r;
+        {
+            int h, heads = head_role(t, 1) != ROLE_OFF ? 2 : 1;
+            for (h = 0; h < heads; h++) {
+                int guard = 16;
+                while (s->next_at[h] < mpulse_f + 1.0f && guard--) {
+                    event_t e;
+                    float d = (s->next_at[h] - mpulse_f) * clk_period;
+                    e.type = EV_ADV;
+                    e.track = (uint8_t)t;
+                    e.head = (uint8_t)h;
+                    e.when = base + (uint32_t)(d > 0.0f ? d * RV_FS : 0.0f);
+                    ev_push(&e);
+                    s->next_at[h] += 1.0f / (h == 0 && !is_graph(t) ? r : head_rate(t, h));
+                }
+                if (s->next_at[h] < mpulse_f)           /* (a guard tripped: catch up, don't burst) */
+                    s->next_at[h] = mpulse_f + 1.0f;
+            }
         }
     }
     mpulse++;
@@ -412,6 +500,8 @@ static void seq_start(void)
         sq[t].next_at[0] = 0.0f;
         sq[t].next_at[1] = 0.0f;
         sq[t].passes = 0;
+        sq[t].travelled[0] = sq[t].travelled[1] = 0;
+        sq[t].pitch_set = 0;
         turn_bits[t] = 0;
     }
     if (pend_scene >= 0)
@@ -447,7 +537,7 @@ static void seq_events(int n)
         switch (e.type) {
         case EV_ADV:
             if (playing)
-                track_advance(e.track, e.when);
+                head_advance(e.track, e.head & 1, e.when);
             break;
         case EV_ON:
             note_on_internal(e.track, e.note, e.vel, e.env, e.chain);
