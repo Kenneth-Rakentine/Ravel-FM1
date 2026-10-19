@@ -1,6 +1,14 @@
+<p align="center">
+  <img src="docs/brand/ravel-banner.jpg" alt="Ravel: sound exploration through texture. Custom firmware for the M-VAVE FM-1" width="900">
+</p>
+
+<h3 align="center">▶&nbsp; <a href="https://de-pattern.github.io/Ravel_FM1/">Open the emulator</a> &nbsp;·&nbsp; play Ravel in your browser</h3>
+<h3 align="center">📖&nbsp; <a href="https://de-pattern.github.io/Ravel_FM1/manual.html">Read the manual</a> &nbsp;·&nbsp; <a href="https://de-pattern.github.io/Ravel_FM1/manual.pdf">PDF</a></h3>
+<h3 align="center">⬇&nbsp; <a href="https://de-pattern.github.io/Ravel_FM1/install/">Install the firmware on an FM-1</a> &nbsp;·&nbsp; <a href="https://github.com/De-Pattern/Ravel_FM1/releases/latest">download the .fwsc</a></h3>
+
 # Ravel
 
-Ravel is a custom firmware for the M-VAVE FM-1. It turns the FM-1 into a pocket groovebox for sound design. It has 8 tracks that synthesize, catch what they play onto a shared tape, and cut it up and rebuild it, and the tracks can play, excite and reshape each other.
+Ravel is a custom firmware for the M-VAVE FM-1 that turns the FM-1 into a pocket groovebox for sound design. It has 8 tracks that synthesize, catch what they play onto a shared tape, cut it up & rebuild it with tracks that can play, excite, and reshape one another
 
 <p align="center">
   <img src="docs/signal-flow.svg" alt="Signal flow: synth, strike and tape tracks feed the mixer and buses; the mixer feeds the capture tape, which plays back into the tape tracks; an influence band connects every track to every other" width="760">
@@ -858,7 +866,7 @@ Turning ALGORITHM while armed moves recording to the new track.
 
 **Ravel has not been tested on FM-1 hardware yet. Installing it is at your own risk.**
 
-1. Open the web installer on Ravel's site (`https://OWNER.github.io/Ravel-FM1/install/`, in Chrome or Edge on a computer).
+1. Open Ravel's site (the repository's GitHub Pages: the emulator) in Chrome or Edge on a computer, and press **Install on FM-1** at the top.
 2. Connect the FM-1, switched on, directly to the computer with a USB data cable.
 3. Press **Install**, allow MIDI when the browser asks, and wait until it says it is done. Don't unplug part way. The FM-1 restarts into Ravel.
 
@@ -887,7 +895,6 @@ The installer works from M-VAVE's own firmware, from Ravel, and from the other c
 | `docs/` | The signal-flow diagram, and `docs/manual/`: the panel drawing and the screenshots used in this manual |
 | `tools/` | The FM-1 build (`build_fm1.py`, `fm1pkg_make.py`), the installer and rescue tools, the site assembler (`make_site.py`), toolchain and SDK-file downloads, font and table generators |
 | `web/installer/` | The web installer (Web MIDI), from Felucca and X0X |
-| `site/` | The GitHub Pages landing page |
 | `tests/fm1/` | Felucca's update-path tests, run against Ravel's package |
 
 ## Building
@@ -951,3 +958,5 @@ GPL-3.0 only (see `LICENSE`). The FM-1 platform layer, loader, installer and too
 - [Felucca](https://github.com/hugelton/Felucca) by Leo Kuroshita (@kurogedelic), Hügelton Instruments: the FM-1's open hardware layer, USB, storage, update loader and web installer that Ravel runs on.
 - [X0X](https://github.com/charlesvestal/fm1-x0x), a Felucca fork, for the platform as Ravel takes it, the simulator's design, its PNG writer and the build, install and rescue tools.
 - The authors of JIANT, SLOOP and sloopDX, and everyone who mapped the FM-1.
+
+<p align="center"><img src="docs/brand/ravel-logo-footer.jpg" alt="RAVEL · FM-1 custom synth firmware" width="360"></p>
