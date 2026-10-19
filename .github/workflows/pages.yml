@@ -1,0 +1,54 @@
+name: pages
+
+# The live site: the landing page, the emulator and the manual's pictures, on every push to main.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: |
+          sudo apt-get install -y clang lld
+          pip install pillow
+      - name: Build the WebAssembly emulator
+        run: sh web/emu/build.sh
+      - name: Smoke test
+        run: node web/emu/test.mjs
+      - name: One-file page
+        run: python3 web/emu/bundle.py
+      - name: Assemble the site
+        run: |
+          mkdir -p _site/docs
+          cp site/index.html _site/index.html
+          cp build/web/ravel-emulator.html _site/emulator.html
+          cp docs/signal-flow.svg _site/signal-flow.svg
+          cp -r docs/manual _site/docs/manual
+          touch _site/.nojekyll
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

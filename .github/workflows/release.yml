@@ -1,0 +1,82 @@
+name: release
+
+# Push a tag such as v0.2 to publish a release with the FM-1 firmware and the one-file emulator.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  emulator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: |
+          sudo apt-get install -y clang lld
+          pip install pillow
+      - name: Build the WebAssembly emulator
+        run: sh web/emu/build.sh
+      - name: Smoke test
+        run: node web/emu/test.mjs
+      - name: One-file page
+        run: python3 web/emu/bundle.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: emulator
+          path: build/web/ravel-emulator.html
+
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python packages (font generator)
+        run: pip install pillow
+      - name: JieLi toolchain
+        run: sh tools/get_toolchain.sh "$HOME/.jieli"
+      - name: FM1 Open SDK
+        run: sh tools/get_sdk.sh
+      - name: Build, check and package
+        run: JIELI_TOOLCHAIN="$HOME/.jieli/toolchain" python3 tools/build_fm1.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: |
+            build/fm1/Ravel-FM1.fwsc
+            build/fm1/report.json
+
+  publish:
+    needs: [emulator, firmware]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum ravel-emulator.html Ravel-FM1.fwsc > SHA256SUMS.txt
+      - name: Release notes
+        run: |
+          repo="${{ github.server_url }}/${{ github.repository }}"
+          pages="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
+          cat > notes.md <<NOTES
+          **Ravel ${{ github.ref_name }}** for the M-VAVE FM-1.
+
+          - \`Ravel-FM1.fwsc\`: the FM-1 firmware. **It has not been tested on FM-1 hardware yet.** Back up your projects and samples first, and keep the FM-1 powered for the whole update. It installs the way M-VAVE's own FM-1 firmware updates do; to go back, install M-VAVE's official firmware the same way.
+          - \`ravel-emulator.html\`: the emulator in one file. Open it in a browser; no install.
+          - \`SHA256SUMS.txt\`: checksums.
+
+          Live emulator: ${pages}emulator.html · Manual: ${repo}#the-manual
+          NOTES
+      - uses: softprops/action-gh-release@v2
+        with:
+          body_path: notes.md
+          files: |
+            dist/Ravel-FM1.fwsc
+            dist/ravel-emulator.html
+            dist/SHA256SUMS.txt
