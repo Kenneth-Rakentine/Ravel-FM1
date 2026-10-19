@@ -23,10 +23,17 @@ jobs:
         run: node web/emu/test.mjs
       - name: One-file page
         run: python3 web/emu/bundle.py
+      - name: The manual as a PDF
+        run: |
+          npm install --no-save playwright@1.47.2
+          npx playwright install --with-deps chromium
+          node tools/make_manual_pdf.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: emulator
-          path: build/web/ravel-emulator.html
+          path: |
+            build/web/ravel-emulator.html
+            build/web/ravel-manual.pdf
 
   firmware:
     runs-on: ubuntu-latest
@@ -66,7 +73,7 @@ jobs:
           merge-multiple: true
       - name: Checksums
         working-directory: dist
-        run: sha256sum ravel-emulator.html Ravel-FM1.fwsc > SHA256SUMS.txt
+        run: sha256sum ravel-emulator.html ravel-manual.pdf Ravel-FM1.fwsc > SHA256SUMS.txt
       - name: Release notes
         run: |
           repo="${{ github.server_url }}/${{ github.repository }}"
@@ -76,6 +83,7 @@ jobs:
 
           - \`Ravel-FM1.fwsc\`: the FM-1 firmware. **It has not been tested on FM-1 hardware yet.** Install it from the web installer (${pages}install/, Chrome or Edge, over USB) or with \`python3 tools/fm1_install.py Ravel-FM1.fwsc\`. Keep the FM-1 connected for the whole update. The installer page can also put M-VAVE's own firmware back.
           - \`ravel-emulator.html\`: the emulator in one file. Open it in a browser; no install.
+          - \`ravel-manual.pdf\`: the manual.
           - \`SHA256SUMS.txt\`: checksums.
 
           Live emulator: ${pages}emulator.html · Installer: ${pages}install/ · Manual: ${repo}#the-manual
@@ -86,4 +94,5 @@ jobs:
           files: |
             dist/Ravel-FM1.fwsc
             dist/ravel-emulator.html
+            dist/ravel-manual.pdf
             dist/SHA256SUMS.txt

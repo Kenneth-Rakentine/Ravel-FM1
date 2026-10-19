@@ -37,6 +37,8 @@ def main(argv):
     manual = emu.parent / "ravel-manual.html"        # made beside the emulator by web/emu/bundle.py
     if manual.exists():
         shutil.copy(manual, out / "manual.html")
+    if manual.with_suffix(".pdf").exists():                 # tools/make_manual_pdf.mjs
+        shutil.copy(manual.with_suffix(".pdf"), out / "manual.pdf")
     shutil.copy(SRC / "docs" / "signal-flow.svg", out / "signal-flow.svg")
     shutil.copytree(SRC / "docs" / "manual", out / "docs" / "manual")
     (out / ".nojekyll").write_text("")

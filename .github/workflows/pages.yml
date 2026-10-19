@@ -43,6 +43,11 @@ jobs:
           if [ -n "$tag" ]; then rel="--release ${tag#v}"; ver="${tag#v}"; else rel=""; ver="dev-$(git rev-parse --short HEAD)"; fi
           JIELI_TOOLCHAIN="$HOME/.jieli/toolchain" AC79_SDK="$HOME/ac79" python3 tools/build_fm1.py $rel
           echo "RAVEL_VERSION=$ver" >> "$GITHUB_ENV"
+      - name: The manual as a PDF
+        run: |
+          npm install --no-save playwright@1.47.2
+          npx playwright install --with-deps chromium
+          node tools/make_manual_pdf.mjs
       - name: Assemble the site
         run: python3 tools/make_site.py _site build/web/ravel-emulator.html build/fm1/Ravel-FM1.fwsc "$RAVEL_VERSION"
       - uses: actions/configure-pages@v5

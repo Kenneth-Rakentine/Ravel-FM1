@@ -131,6 +131,25 @@ blockquote {{ margin: 16px 0; padding: 8px 16px; border-left: 3px solid var(--re
 .top {{ position: fixed; right: 18px; bottom: 18px; background: var(--panel); border: 1px solid var(--line); color: var(--ink);
         border-radius: 6px; padding: 8px 12px; text-decoration: none; font-weight: 600; font-size: 14px; }}
 .menu {{ display: none; }}
+@media print {{
+  :root, :root:not([data-theme="dark"]), :root[data-theme] {{ --room: #fff; --panel: #f2f2f2; --line: #cfcfcf; --ink: #111; --muted: #555;
+    --red-hi: #a3161c; --code: #eeeeee; color-scheme: light; }}
+  @page {{ size: A4; margin: 16mm 15mm 18mm; }}
+  body {{ font-size: 11pt; line-height: 1.45; }}
+  nav, .top {{ display: none !important; }}
+  .layout {{ display: block; max-width: none; }}
+  main {{ padding: 0; }}
+  h1 {{ font-size: 30pt; margin-top: 60mm; }}
+  main > .lede {{ font-size: 13pt; page-break-after: always; }}
+  h2 {{ page-break-before: always; border-top: 0; margin-top: 0; padding-top: 0; font-size: 20pt; }}
+  h2 a.anchor, h3 a.anchor {{ display: none; }}
+  h2, h3 {{ page-break-after: avoid; }}
+  table, img, blockquote, pre, li {{ page-break-inside: avoid; }}
+  table {{ display: table; font-size: 9.5pt; }}
+  img {{ max-width: 46%; }}
+  img[src^="data:image/svg"] {{ max-width: 100%; }}
+  a {{ color: var(--red-hi); text-decoration: none; }}
+}}
 @media (max-width: 820px) {{
   .layout {{ display: block; }}
   nav {{ position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 16px; }}
@@ -146,7 +165,7 @@ blockquote {{ margin: 16px 0; padding: 8px 16px; border-left: 3px solid var(--re
 <div class="layout">
 <nav id="nav">
   <div class="brand">RAVEL<span>.</span></div>
-  <div class="sub">Manual · M-VAVE FM-1 firmware</div>
+  <div class="sub">Manual · M-VAVE FM-1 firmware<span id="pdf" hidden> · <a href="manual.pdf">PDF</a></span></div>
   <button class="menu" id="menu" aria-expanded="false" aria-controls="links">Contents</button>
   <div class="links" id="links">
     {"".join(nav)}
@@ -177,6 +196,7 @@ blockquote {{ margin: 16px 0; padding: 8px 16px; border-left: 3px solid var(--re
     a.className = "anchor"; a.href = "#" + h.id; a.textContent = "#"; a.setAttribute("aria-label", "Link to this section");
     h.appendChild(a);
   }});
+  if (/^https?:$/.test(location.protocol)) document.getElementById("pdf").hidden = false;   /* the site has the PDF beside it */
   var nav = document.getElementById("nav"), menu = document.getElementById("menu");
   menu.addEventListener("click", function () {{
     var open = nav.classList.toggle("open");

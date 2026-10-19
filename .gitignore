@@ -5,3 +5,4 @@ build/
 __pycache__/
 web/emu/ravel.wasm
 __pycache__/
+node_modules/
