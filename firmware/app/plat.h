@@ -1,14 +1,14 @@
-/* SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception */
+/* SPDX-License-Identifier: GPL-3.0-only */
 /* Ravel's platform: everything the instrument needs from the machine it runs on.
  *
- * The FM-1 implements it on M-VAVE's FM1 Open SDK (firmware/board/plat_sdk.c); the desktop
+ * The FM-1 implements it bare metal on Felucca's open hardware layer (firmware/fm1/src/plat_fm1.c); the desktop
  * simulator and the browser emulator implement it on plain memory (host/host_core.c). */
 #pragma once
 #include <stdint.h>
 
-/* buttons by printed label, in the FM1 Open SDK's order (struct fm1_controls.buttons) */
+/* buttons by printed label (firmware/fm1/src/panel.c maps them to the key matrix) */
 enum { B_OCTDN, B_OCTUP, B_FX, B_SCL, B_ENV, B_LFO, B_EDIT, B_GLO, B_HOME, B_SAVE, B_ARP, B_SEQ, B_PLAY, B_REC, NB };
-/* encoders, in the SDK's order (struct fm1_controls.encoders) */
+/* encoders */
 enum { EN_SELECT, EN_ALGO, EN_K1, EN_K2, EN_K3, EN_K4, EN_PRESET, NE };
 #define NKEYS 27                        /* F3 .. G5 */
 
@@ -30,7 +30,7 @@ void plat_blit(int x, int y, int w, int h, const uint16_t *px);
 int plat_load(int slot, void *dst, uint32_t max);          /* copies up to max; returns the stored length, < 0 = empty */
 int plat_save(int slot, const void *src, uint32_t len);    /* 0 = saved */
 
-/* audio coming in (USB or Bluetooth on the FM-1, a file in the emulator): fills up to
+/* audio coming in (a file in the emulator; none on the FM-1, whose USB sends Ravel's output): fills up to
  * frames stereo frames, interleaved, -1..1; returns how many (0 = nothing playing in) */
 int plat_audio_in(float *lr, int frames);
 

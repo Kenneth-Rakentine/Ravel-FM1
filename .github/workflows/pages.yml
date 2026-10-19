@@ -1,6 +1,6 @@
 name: pages
 
-# The live site: the landing page, the emulator and the manual's pictures, on every push to main.
+# The live site on every push to main: the landing page, the emulator, the web installer with the firmware.
 on:
   push:
     branches: [main]
@@ -20,6 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Tools
         run: |
           sudo apt-get install -y clang lld
@@ -30,14 +32,19 @@ jobs:
         run: node web/emu/test.mjs
       - name: One-file page
         run: python3 web/emu/bundle.py
-      - name: Assemble the site
+      - name: JieLi toolchain and the AC79 SDK files
         run: |
-          mkdir -p _site/docs
-          cp site/index.html _site/index.html
-          cp build/web/ravel-emulator.html _site/emulator.html
-          cp docs/signal-flow.svg _site/signal-flow.svg
-          cp -r docs/manual _site/docs/manual
-          touch _site/.nojekyll
+          sh tools/get_toolchain.sh "$HOME/.jieli"
+          sh tools/get_ac79_files.sh "$HOME/ac79"
+      - name: The firmware (the latest v* tag's version, or this commit's)
+        run: |
+          git fetch --tags --quiet || true
+          tag="$(git describe --tags --exact-match --match 'v*' 2>/dev/null || true)"
+          if [ -n "$tag" ]; then rel="--release ${tag#v}"; ver="${tag#v}"; else rel=""; ver="dev-$(git rev-parse --short HEAD)"; fi
+          JIELI_TOOLCHAIN="$HOME/.jieli/toolchain" AC79_SDK="$HOME/ac79" python3 tools/build_fm1.py $rel
+          echo "RAVEL_VERSION=$ver" >> "$GITHUB_ENV"
+      - name: Assemble the site
+        run: python3 tools/make_site.py _site build/web/ravel-emulator.html build/fm1/Ravel-FM1.fwsc "$RAVEL_VERSION"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

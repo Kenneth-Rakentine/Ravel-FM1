@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception */
+/* SPDX-License-Identifier: GPL-3.0-only */
 /* Ravel: small DSP pieces shared by the engines, the tracks and the buses. Single-precision
  * float throughout (the FM-1 has a float FPU, no double), no C library. */
 #pragma once

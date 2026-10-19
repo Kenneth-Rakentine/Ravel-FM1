@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception */
+/* SPDX-License-Identifier: GPL-3.0-only */
 /* Ravel: movement and modulation. Silt's two-oscillator master clock, two LFOs, dust; the mod
  * matrix; the macros (each destination with its own start, end, curve and window on the
  * macro's travel); and the effective value of every parameter: its knob or step lock, plus the

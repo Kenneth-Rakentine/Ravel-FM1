@@ -68,19 +68,24 @@ jobs:
 
   firmware:
     runs-on: ubuntu-latest
-    # Ravel does not fit the FM-1's app area yet (see README, "The FM-1 build"): the job
-    # reports the size and keeps the ELF and map, without failing the run.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Python packages (font generator)
         run: pip install pillow
       - name: JieLi toolchain
         run: sh tools/get_toolchain.sh "$HOME/.jieli"
-      - name: FM1 Open SDK
-        run: sh tools/get_sdk.sh
+      - name: AC79 SDK files for the package
+        run: sh tools/get_ac79_files.sh "$HOME/ac79"
       - name: Build, check and package
-        run: JIELI_TOOLCHAIN="$HOME/.jieli/toolchain" python3 tools/build_fm1.py
+        run: JIELI_TOOLCHAIN="$HOME/.jieli/toolchain" AC79_SDK="$HOME/ac79" python3 tools/build_fm1.py
+      - name: Update-path tests (Felucca's) against the package
+        run: |
+          mkdir -p build/fm1test
+          cc -o build/fm1test/ota_test tests/fm1/ota_test.c && build/fm1test/ota_test build/fm1/Ravel-FM1.fwsc
+          head -c 200000 build/fm1/ravel.bin > build/fm1test/old_app.bin
+          AC79_SDK="$HOME/ac79" python3 tools/fm1pkg_make.py build/fm1test/old_app.bin build/fm1/loader/ota.bin build/fm1test/old.fwsc
+          cc -o build/fm1test/ldr_test tests/fm1/ldr_test.c && build/fm1test/ldr_test build/fm1test/old.fwsc build/fm1/Ravel-FM1.fwsc
+          python3 tests/fm1/install_test.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -88,5 +93,4 @@ jobs:
           path: |
             build/fm1/Ravel-FM1.fwsc
             build/fm1/ravel.elf
-            build/fm1/ravel.map
             build/fm1/report.json

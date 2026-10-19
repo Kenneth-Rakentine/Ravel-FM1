@@ -34,12 +34,19 @@ jobs:
       - uses: actions/checkout@v4
       - name: Python packages (font generator)
         run: pip install pillow
-      - name: JieLi toolchain
-        run: sh tools/get_toolchain.sh "$HOME/.jieli"
-      - name: FM1 Open SDK
-        run: sh tools/get_sdk.sh
+      - name: JieLi toolchain and the AC79 SDK files
+        run: |
+          sh tools/get_toolchain.sh "$HOME/.jieli"
+          sh tools/get_ac79_files.sh "$HOME/ac79"
       - name: Build, check and package
-        run: JIELI_TOOLCHAIN="$HOME/.jieli/toolchain" python3 tools/build_fm1.py
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          JIELI_TOOLCHAIN="$HOME/.jieli/toolchain" AC79_SDK="$HOME/ac79" python3 tools/build_fm1.py --release "${tag#v}"
+      - name: Update-path tests against the package
+        run: |
+          mkdir -p build/fm1test
+          cc -o build/fm1test/ota_test tests/fm1/ota_test.c && build/fm1test/ota_test build/fm1/Ravel-FM1.fwsc
+          python3 tests/fm1/install_test.py
       - uses: actions/upload-artifact@v4
         with:
           name: firmware
@@ -67,11 +74,11 @@ jobs:
           cat > notes.md <<NOTES
           **Ravel ${{ github.ref_name }}** for the M-VAVE FM-1.
 
-          - \`Ravel-FM1.fwsc\`: the FM-1 firmware. **It has not been tested on FM-1 hardware yet.** Back up your projects and samples first, and keep the FM-1 powered for the whole update. It installs the way M-VAVE's own FM-1 firmware updates do; to go back, install M-VAVE's official firmware the same way.
+          - \`Ravel-FM1.fwsc\`: the FM-1 firmware. **It has not been tested on FM-1 hardware yet.** Install it from the web installer (${pages}install/, Chrome or Edge, over USB) or with \`python3 tools/fm1_install.py Ravel-FM1.fwsc\`. Keep the FM-1 connected for the whole update. The installer page can also put M-VAVE's own firmware back.
           - \`ravel-emulator.html\`: the emulator in one file. Open it in a browser; no install.
           - \`SHA256SUMS.txt\`: checksums.
 
-          Live emulator: ${pages}emulator.html · Manual: ${repo}#the-manual
+          Live emulator: ${pages}emulator.html · Installer: ${pages}install/ · Manual: ${repo}#the-manual
           NOTES
       - uses: softprops/action-gh-release@v2
         with:

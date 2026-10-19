@@ -1,9 +1,9 @@
-/* SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception */
+/* SPDX-License-Identifier: GPL-3.0-only */
 /* Ravel: the instrument. Everything the modules share: sizes, parameters, the project, the
  * running state, and the functions each module offers.
  *
  * Ravel is portable C (C99, single-precision float, no C library): the same files build the
- * FM-1 firmware (on M-VAVE's FM1 Open SDK), the desktop simulator and the browser emulator.
+ * FM-1 firmware (bare metal, firmware/fm1), the desktop simulator and the browser emulator.
  * The platform it needs is plat.h. */
 #pragma once
 #include <stdint.h>
@@ -13,7 +13,7 @@
 #define RAVEL_VERSION_STR "0.2"
 
 /* ------------------------------------------------------------------ sizes --- */
-#define RV_FS 44100                 /* the FM1 Open SDK's rate (fm1_block.h) */
+#define RV_FS 44100                 /* the FM-1's codec runs at about 44.1 kHz */
 #define RV_BLOCK 128                /* frames per audio interrupt */
 #define RV_SUB 32                   /* frames per control step: events, modulation */
 #define RV_TRACKS 8
@@ -31,8 +31,8 @@
 #define RV_BEADS 2                  /* grain engines for tape tracks */
 #define RV_ROWS 4
 
-/* memory: sized for the FM-1 on the FM1 Open SDK, which leaves Ravel about 250 KB of RAM
- * (the SDK's system, USB and Bluetooth stacks take the rest). The emulator uses the same. */
+/* memory: sized for the FM-1, where the instrument's state lives in the 336 KB RAM pool
+ * (firmware/fm1/app.ld). The emulator uses the same. */
 #ifndef RV_TAPE_BYTES
 #define RV_TAPE_BYTES (120u * 1024u)  /* 1.4 s clean, 1.8 s tape, 5.5 s dirty */
 #endif

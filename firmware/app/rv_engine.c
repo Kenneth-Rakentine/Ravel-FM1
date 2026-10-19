@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception */
+/* SPDX-License-Identifier: GPL-3.0-only */
 /* Ravel: the engine. Allocates voices, runs every track's chain (source, articulation, filter,
  * skin, insert, mixer), the influence between tracks, the buses and the master, in control
  * steps of 32 frames. The control side talks to it through a command queue, so the FM-1's

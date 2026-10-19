@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception */
+/* SPDX-License-Identifier: GPL-3.0-only */
 /* Ravel: articulation and the six synth engines (VA, PD, FM, PHYS, FORMANT, PARTICLE).
  * Part of the engine unit (ravel_app.c). */
 #include "rv_int.h"

@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception */
+/* SPDX-License-Identifier: GPL-3.0-only */
 /* Ravel: the whole instrument as one unit (the modules share their statics). The platform
  * (plat.h) and the Beads port (core/beads) are built beside it. */
 #include "rv_params.c"

@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception */
+/* SPDX-License-Identifier: GPL-3.0-only */
 /* Ravel: single-precision maths without libm.
  *
  * The FM-1's FPU is float only and the firmware links no maths library, so these are all

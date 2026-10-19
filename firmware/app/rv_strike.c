@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception */
+/* SPDX-License-Identifier: GPL-3.0-only */
 /* Ravel: the strike voice. Percussion synthesis as exciter into body: click, noise, metallic
  * squares, an FM burst, dust and rain (seeded, with Order from scattered to clockwork), bow,
  * breath, or another track's audio, into a ping filter, a modal bank, a struck disc or two

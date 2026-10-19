@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception */
+/* SPDX-License-Identifier: GPL-3.0-only */
 /* Ravel: the interface. Each button opens the section nearest its printed word; SELECT walks
  * the section's pages, ALGORITHM picks the track, PRESETS browses what the page holds (sounds,
  * patterns, scenes, slots, rows...), KNOB 1-4 set the four values in the knob row. Holding a
@@ -2529,6 +2529,27 @@ void ui_init(void)
     ui.sec = SEC_HOME;
     ui.prev_btn = plat_buttons();
     ui.prev_keys = plat_keys();
+}
+
+/* a whole-screen notice (the device's start, update, crash and safe-mode screens): a title and up
+ * to three lines, on black, or on red for a crash */
+void ui_notice(const char *title, const char *l1, const char *l2, const char *l3, int red)
+{
+    int b;
+    uint16_t bg = red ? RGB(150, 20, 24) : RGB(0, 0, 0);
+    for (b = 0; b < PLAT_H; b += GB_H) {
+        g_band(b);
+        g_fill(0, b, PLAT_W, GB_H, bg);
+        if (title)
+            g_text_c(PLAT_W / 2, 70, &FONT_B, title, C_WHITE);
+        if (l1)
+            g_text_c(PLAT_W / 2, 110, &FONT_XS, l1, red ? C_WHITE : C_INK);
+        if (l2)
+            g_text_c(PLAT_W / 2, 132, &FONT_XS, l2, red ? C_WHITE : C_INK);
+        if (l3)
+            g_text_c(PLAT_W / 2, 160, &FONT_XS, l3, red ? C_WHITE : C_RED);
+        g_send();
+    }
 }
 
 /* for the emulator page: where the interface is */

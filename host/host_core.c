@@ -4,7 +4,7 @@
  * simulator (host/ravel_host.c: scripts, PNG and WAV) and the browser emulator
  * (web/emu/ravel_web.c, WebAssembly).
  *
- * Timing follows the FM-1 on M-VAVE's FM1 Open SDK: audio in blocks of 128 frames at 44,100 Hz,
+ * Timing: audio in blocks of 128 frames at 44,100 Hz,
  * the interface polled every millisecond and drawn every 16 ms. */
 #include <stdint.h>
 #include "../firmware/app/plat.h"
@@ -101,7 +101,7 @@ static void boot(void)
     ravel_start();
 }
 
-/* the master knob, as the SDK's board code applies it */
+/* the master knob, as the FM-1's audio interrupt applies it */
 static void master_gain(int32_t *b, uint32_t n)
 {
     uint32_t i;

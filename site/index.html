@@ -67,7 +67,7 @@ footer { margin-top: 40px; font: 400 12px var(--mono); color: var(--muted); bord
 
   <div class="actions">
     <a class="btn prime" href="emulator.html">Open the emulator<small>plays in your browser</small></a>
-    <a class="btn" id="dl" href="#install">Download firmware<small>releases (first build coming)</small></a>
+    <a class="btn" id="dl" href="install/">Install on the FM-1<small>web installer, over USB</small></a>
     <a class="btn" id="manual" href="#">Read the manual<small>every page, knob and key</small></a>
   </div>
 
@@ -90,12 +90,13 @@ footer { margin-top: 40px; font: 400 12px var(--mono); color: var(--muted); bord
     <p class="warn"><b>Read this first.</b> Ravel has been built and tested in the emulator and simulator, but <b>not yet on FM-1 hardware</b>. Installing it is at your own risk.</p>
     <ol>
       <li>Try Ravel in the <a href="emulator.html">emulator</a> first. The firmware runs the same code.</li>
-      <li>Back up anything on your FM-1 you want to keep (projects, samples) with M-VAVE's own tools.</li>
-      <li>Download <code>Ravel-FM1.fwsc</code> from the <a id="dl2" href="#install">latest release</a>, and check it against <code>SHA256SUMS.txt</code> if you like.</li>
-      <li>Install it the way you install M-VAVE's own FM-1 firmware updates, using M-VAVE's update tool (see the <a href="https://open.m-vave.com/fm1-workbench" rel="noopener">FM-1 workbench</a> and its instructions).</li>
-      <li>Keep the FM-1 powered and connected for the whole update. Don't unplug it part way.</li>
-      <li>To go back, install M-VAVE's official firmware the same way.</li>
+      <li>Open the <a href="install/">web installer</a> in Chrome or Edge on a computer.</li>
+      <li>Connect the FM-1 to the computer directly with a USB data cable, switched on, as it is.</li>
+      <li>Press <b>Install</b>, allow MIDI when the browser asks, and wait. Don't unplug it part way. The FM-1 restarts into Ravel.</li>
+      <li>To go back, the same page writes M-VAVE's own firmware back (you download that file from M-VAVE).</li>
     </ol>
+    <p>The firmware file itself: <a id="fw" href="firmware/Ravel-FM1.fwsc">Ravel-FM1.fwsc</a> (also on the repository's <a id="rel" href="#install">releases</a>), for the command line installer: <code>python3 tools/fm1_install.py Ravel-FM1.fwsc</code>.</p>
+    <p>What changes on the FM-1: Ravel replaces the whole firmware. Bluetooth and the audio input are not used; USB carries MIDI and Ravel's sound to the computer. Holding OCT&minus; and OCT+ for 5 seconds puts the FM-1 into update mode, and if Ravel ever fails to start twice it opens a safe mode with USB on, so the installer can always reach it.</p>
   </div>
 
   <footer>Ravel is free software (GPL-3.0). Beads' grain engine by Mutable Instruments (MIT). FM-1 is a product of M-VAVE; this project is not affiliated with M-VAVE.</footer>
@@ -106,13 +107,10 @@ footer { margin-top: 40px; font: 400 12px var(--mono); color: var(--muted); bord
   if (/\.github\.io$/i.test(h)) {
     var owner = h.split(".")[0], repo = parts.length ? parts[0] : owner + ".github.io";
     var base = "https://github.com/" + owner + "/" + repo;
-    var rel = base + "/releases/latest";
-    document.getElementById("dl").href = rel;
-    document.getElementById("dl2").href = rel;
+    document.getElementById("rel").href = base + "/releases";
     document.getElementById("manual").href = base + "#the-manual";
   } else {
     document.getElementById("manual").href = "#install";
-    document.getElementById("dl").querySelector("small").textContent = "see the install notes below";
   }
 })();
 </script>

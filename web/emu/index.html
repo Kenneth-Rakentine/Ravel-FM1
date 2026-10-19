@@ -209,7 +209,7 @@ kbd { font: 500 11px var(--mono); border: 1px solid var(--line); border-radius: 
         <input type="file" id="infile" accept="audio/*" aria-label="Audio file to play into the input">
         <label class="note" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="intape"> Record it onto the tape</label>
         <label class="note" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="inmon" checked> Hear it</label>
-        <p class="note">On the FM-1 this is USB or Bluetooth audio from a computer or phone. Here a file stands in.</p>
+        <p class="note">The FM-1 has no audio input in Ravel (its USB sends Ravel's output to a computer). Here a file stands in, so you can try the tape and the INPUT exciter.</p>
       </div>
       <div>
         <h3>Output</h3>
@@ -254,7 +254,7 @@ kbd { font: 500 11px var(--mono); border: 1px solid var(--line); border-radius: 
 <script>
 "use strict";
 const WASM_B64 = "__RAVEL_WASM__";
-/* buttons in the FM1 Open SDK's order (plat.h) */
+/* buttons in Ravel's order (plat.h) */
 const BTN = ["OCT-","OCT+","FX","SCL","ENV","LFO","EDIT","GLO","HOME","SAVE","ARP","SEQ","PLAY","REC"];
 const BTN_FN = {FX:"buses",SCL:"scale",ENV:"articulate",LFO:"mod",EDIT:"voice",GLO:"song",HOME:"tracks",SAVE:"save",ARP:"tape",SEQ:"steps",PLAY:"start",REC:"record"};
 const ROW1 = ["FX","SCL","ENV","LFO","EDIT","GLO"], ROW2 = ["HOME","SAVE","ARP","SEQ","PLAY","REC"];

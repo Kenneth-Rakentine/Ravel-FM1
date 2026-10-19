@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception */
+/* SPDX-License-Identifier: GPL-3.0-only */
 /* Ravel engine internals: the running state of voices, tracks, the tape, the buses and the
  * sequencer. Only the engine's modules include this (they build as one unit, ravel_app.c). */
 #pragma once

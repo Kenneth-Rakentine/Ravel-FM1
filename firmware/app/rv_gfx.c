@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception */
+/* SPDX-License-Identifier: GPL-3.0-only */
 /* Ravel: drawing. The screen is drawn in bands of GB_H rows: the UI paints the whole frame
  * once per band, every primitive clipped to it, and each band is sent to the panel as soon as
  * it is done. No full-screen buffer: 19 KB instead of 113 KB.

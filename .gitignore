@@ -4,3 +4,4 @@ tests/beads/out16/
 build/
 __pycache__/
 web/emu/ravel.wasm
+__pycache__/

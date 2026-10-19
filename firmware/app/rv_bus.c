@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception */
+/* SPDX-License-Identifier: GPL-3.0-only */
 /* Ravel: the shared buses. The material vocoder (Silt's favourite idea: one sound's spectrum
  * played on another's material), the feedback bus (a delay loop with a processor inside and an
  * edge guard, after Silt's feedback network), the filter pair (two filters with their own LFOs,

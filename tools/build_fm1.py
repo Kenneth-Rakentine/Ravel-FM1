@@ -1,194 +1,392 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Build Ravel for the FM-1 on M-VAVE's FM1 Open SDK, on Linux or macOS.
+# Adapted from X0X's tools/build.py (a Felucca fork), Copyright (C) 2026 Leo Kuroshita (@kurogedelic),
+# Hügelton Instruments
+"""Build Ravel for the FM-1, bare metal: the app, the update loader and an installable .fwsc package.
 
-The same steps as the SDK's own sdk/Build.ps1 (Windows): compile with JieLi's PI32v2 clang,
-link against the SDK's binary library with its linker script, check the image, and package
-it (tools/fm1pack.py, a port of the SDK's Package.cs).
+  tools/build_fm1.py [--release X.Y[.Z]]
 
-  JIELI_TOOLCHAIN=~/.jieli/toolchain python3 tools/build_fm1.py [--sdk build/fm1_open]
+Outputs in build/fm1/: ravel.bin (app), loader/ota.bin (the update loader, Felucca's, unchanged),
+Ravel-FM1.fwsc (package). The package needs three files of JieLi's AC79 SDK (AC79_SDK, see README).
 
-Outputs in build/fm1: ravel.elf, ravel.map, ravel-app.bin, Ravel-FM1.fwsc, report.json.
+The JieLi toolchain is Linux x86-64 only. JIELI_TOOLCHAIN points at it; on
+macOS (or with JIELI_DOCKER=1) each tool runs in a linux/amd64 container.
 """
 import argparse
 import hashlib
-import json
 import os
+import platform
 import re
-import shutil
+import struct
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "tools"))
-import fm1pack  # noqa: E402
+SRC = Path(__file__).resolve().parents[1]
+FW = SRC / "firmware" / "fm1"
+APP = SRC / "firmware" / "app"
+OUT = SRC / "build" / "fm1"
+GEN = SRC / "build" / "gen"
+LDR = OUT / "loader"
+sys.path.insert(0, str(SRC / "tools"))
+import fm1pkg_make  # noqa: E402
+import lz4blk  # noqa: E402
 
-RAVEL_VERSION = "0.2"
-PRODUCT = "FM-1_8960002"              # Ravel's update identity: FM-1_8 + 96 (Ravel) + release 0002
-USER_BYTES, UPDATE_FAMILY = 536576, 7
+APP_XIP = 0x02000120                # app.bin offset 0 in the XIP map; the SPL jumps here
+APP_SLOT = fm1pkg_make.APP_SLOT
+LOADER_LOAD = 0x01C0A800
+LOADER_NAME = b"usb_hid_ota.bin"    # the file name the SPL looks for
+DOCKER_IMAGE = os.environ.get("JIELI_DOCKER_IMAGE", "debian:bookworm-slim")
+CFLAGS = ["-Os", "-ffunction-sections", "-fno-builtin", "-Wall", "-Wno-unused-function"]
+# the AC79's single-precision FPU (the SDK's own flags); no fused multiply-add, so the host
+# build (-ffp-contract=off) computes the same samples
+FPU = ["-mcpu=r3", "-mfprev1", "-ffp-contract=off"]
+# the instrument and the Beads port: separate units at -O2, with the emulator's options
+# (rv_app.o and bd.o: app.ld puts their state in the RAM pool)
+BD = ["-DBD_NUM_GRAINS=16", "-DBD_NO_DELAY", "-DBD_READER_ONLY"]
+O2_UNITS = [(APP / "ravel_app.c", "rv_app.o"), (SRC / "core" / "beads" / "bd.c", "bd.o"),
+            (SRC / "core" / "beads" / "bd_tables.c", "bd_tables.o")]
+LINE = re.compile(r"^\s*([0-9a-f]+):\s+((?:[0-9a-f]{2} )+)\s*\t(.*)$")
 
-FLAGS = ["-target", "pi32v2", "-integrated-as", "-mcpu=r3", "-mfprev1", "-Wuninitialized",
-         "-Wno-invalid-noreturn", "-fno-common", "-flto", "-fallow-pointer-null", "-fprefer-gnu-section",
-         "-femulated-tls", "-Wno-shift-negative-value", "-Wframe-larger-than=2560", "-fms-extensions",
-         "-fno-unwind-tables", "-ffunction-sections", "-fdata-sections", "-fmessage-length=0",
-         "-cl-single-precision-constant", "-mllvm", "-pi32v2-large-program=true", "-D__GCC_PI32V2__", "-O2",
-         "-fwrapv", "-fno-fast-math", "-ffp-contract=off"]
-LINK_PLUGIN = ["-flto", "--plugin-opt=-pi32v2-always-use-itblock=false", "--plugin-opt=-enable-ipra=true",
-               "--plugin-opt=-pi32v2-merge-max-offset=4096", "--plugin-opt=-pi32v2-enable-simd=true", "--plugin-opt=mcpu=r3",
-               "--plugin-opt=-global-merge-on-const", "--plugin-opt=-inline-threshold=5", "--plugin-opt=-inline-max-allocated-size=32",
-               "--plugin-opt=-inline-normal-into-special-section=true", "--plugin-opt=-dont-used-symbol-list=malloc,free,sprintf,printf,puts,putchar",
-               "--plugin-opt=-pi32v2-enable-rep-memop", "--plugin-opt=-emulated-tls", "--sort-common",
-               "--plugin-opt=-pi32v2-large-program=true", "--plugin-opt=-pi32v2-csync-before-rti=true"]
+# SDK files of AC79NN_SDK_V1.2.1_2023-12-13 (the tested version)
+SDK_SHA256 = {
+    "uboot.boot": "4e3b4c220dc96641cb5a723f41e68ce41d5261ae9434bb33fbd7f2c59976ded4",
+    "cfg_tool.bin": "276579954f076886a6a7694f65dc71c034a63a2c204b76749065c0ac7b010d1b",
+    "cfg/eq_cfg_hw.bin": "41167491bffed4651750719c973d2758adeb9021a5670d02d6a53c85ed80ea7d",
+}
 
-
-def run(cmd, **kw):
-    r = subprocess.run([str(c) for c in cmd], capture_output=True, text=True, **kw)
-    if r.returncode:
-        sys.stderr.write(r.stdout + r.stderr)
-        raise SystemExit(f"build_fm1: {Path(str(cmd[0])).name} failed")
-    return r.stdout
+PRODUCT = "FM-1_960"                # package identity; release builds are FM-1_96XXYYZZ (see main)
+VERSION = None
 
 
 def toolchain():
-    tc = Path(os.environ.get("JIELI_TOOLCHAIN", Path.home() / ".jieli" / "toolchain"))
-    for cand in (tc / "pi32v2" / "bin", tc / "bin"):
-        if (cand / "clang").exists():
-            return cand
-    raise SystemExit("build_fm1: set JIELI_TOOLCHAIN to JieLi's toolchain (tools/get_toolchain.sh)")
+    tc = os.environ.get("JIELI_TOOLCHAIN")
+    if not tc or not (Path(tc) / "pi32v2" / "bin" / "clang").exists():
+        raise SystemExit("JIELI_TOOLCHAIN must point at the JieLi Linux toolchain "
+                         "(the directory with pi32v2/ and common/; see tools/get_toolchain.sh)")
+    return Path(tc).resolve()
 
 
-def sha(p):
-    return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+def use_docker():
+    native = platform.system() == "Linux" and platform.machine() in ("x86_64", "AMD64")
+    return os.environ.get("JIELI_DOCKER", "0" if native else "1") == "1"
+
+
+_BUILDER = None
+_BUILDER_LOCK = __import__("threading").Lock()
+
+
+def builder():
+    """one long-lived toolchain container per source tree (starting a container per tool call cost
+    most of the build); it stops by itself after an hour without a build"""
+    global _BUILDER
+    with _BUILDER_LOCK:            # the loader and the app build in parallel: start it once
+        return _builder_start()
+
+
+def _builder_start():
+    global _BUILDER
+    if _BUILDER:
+        return _BUILDER
+    name = "jieli-" + hashlib.sha1(str(SRC).encode()).hexdigest()[:10]
+    st = subprocess.run(["docker", "inspect", "-f", "{{.State.Running}}", name], capture_output=True, text=True)
+    if st.stdout.strip() != "true":
+        subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+        r = subprocess.run(["docker", "run", "-d", "--rm", "--name", name, "--platform", "linux/amd64",
+                            "-v", f"{SRC}:/work", "-v", f"{toolchain()}:/opt/jieli:ro", "-w", "/work",
+                            DOCKER_IMAGE, "sh", "-c", "sleep 3600"], capture_output=True, text=True)
+        if r.returncode:
+            sys.stderr.write(r.stderr)
+            raise SystemExit("build: cannot start the toolchain container")
+    else:                           # an hour from now again
+        subprocess.run(["docker", "exec", "-d", name, "sh", "-c", "sleep 3600 && kill 1"], capture_output=True)
+    _BUILDER = name
+    return name
+
+
+def tc(tool, *args):
+    """run a toolchain binary (pi32v2/bin/..., common/bin/...) with cwd SRC; paths relative to SRC"""
+    rel = [str(Path(a).resolve().relative_to(SRC)) if isinstance(a, Path) else a for a in args]
+    if tool == "cc":                # the toolchain's cc wrapper needs python3; call clang directly
+        tool, rel = "pi32v2/bin/clang", ["-target", "pi32v2", *rel]
+    if use_docker():
+        cmd = ["docker", "exec", "-w", "/work", builder(), f"/opt/jieli/{tool}", *rel]
+    else:
+        cmd = [str(toolchain() / tool), *rel]
+    r = subprocess.run(cmd, cwd=SRC, capture_output=True, text=True)
+    if r.returncode:
+        sys.stderr.write(r.stdout + r.stderr)
+        raise SystemExit(f"build: {tool} failed")
+    if r.stderr.strip():
+        sys.stderr.write(r.stderr)
+    return r.stdout
+
+
+def tc_all(*cmds):
+    # at most 4 at once: a podman machine drops concurrent container connections (ssh EOF)
+    with ThreadPoolExecutor(min(len(cmds), int(os.environ.get("RAVEL_JOBS", "4")))) as ex:
+        return list(ex.map(lambda c: tc(*c), cmds))
+
+
+def generate():
+    """generated headers: Ravel's screen font"""
+    GEN.mkdir(parents=True, exist_ok=True)
+    if not (GEN / "rv_font.h").exists():
+        r = subprocess.run([sys.executable, str(SRC / "tools" / "gen_rv_font.py"), str(GEN / "rv_font.h")],
+                           capture_output=True, text=True)
+        sys.stdout.write(r.stdout)
+        if r.returncode:
+            sys.stderr.write(r.stderr)
+            raise SystemExit("build: gen_rv_font.py failed")
+
+
+# ---- update loader
+
+def crc16(d, c=0):
+    for b in d:
+        c ^= b << 8
+        for _ in range(8):
+            c = ((c << 1) ^ 0x1021) if c & 0x8000 else c << 1
+        c &= 0xFFFF
+    return c
+
+
+def ldr_head(dcrc, a, b, attr, name):
+    body = struct.pack("<HIIBBH16s", dcrc, a, b, attr, 0, 0, name)
+    return struct.pack("<H", crc16(body)) + body
+
+
+def ldr_wrap(image):
+    """ota.bin = outer JLFS head (32 B) + inner head (32 B, load address) +
+    blocks [clen u32][dlen u32][LZ4 block], dlen 4096 except the last"""
+    blocks = bytearray()
+    for i in range(0, len(image), 4096):
+        raw = image[i:i + 4096]
+        c = lz4blk.compress(raw)
+        if len(c) > 4096 or lz4blk.decompress(c) != raw:
+            raise SystemExit(f"loader: block {i // 4096} does not compress below 4096 B")
+        blocks += struct.pack("<II", len(c), len(raw)) + c
+    inner = ldr_head(crc16(image), len(image), LOADER_LOAD, 0, LOADER_NAME)
+    body = inner + bytes(blocks)
+    return ldr_head(crc16(body), 0x20, len(body), 0x41, LOADER_NAME) + body
+
+
+def build_loader():
+    LDR.mkdir(parents=True, exist_ok=True)
+    src = FW / "loader"
+    flags = [*CFLAGS, "-Ifirmware/fm1/hal", "-Ifirmware/fm1/src"]
+    tc_all(("cc", "-c", src / "crt0_ldr.S", "-o", LDR / "crt0_ldr.o"),
+           ("cc", *flags, "-c", src / "loader.c", "-o", LDR / "loader.o"))
+    elf = LDR / "loader.elf"
+    tc("pi32v2/bin/ld", "--gc-sections", "-e", "_start", "-T", src / "loader.ld",
+       LDR / "crt0_ldr.o", LDR / "loader.o", "-o", elf)
+    _, dis, hdr, syms = tc_all(("common/bin/objcopy", "-O", "binary", "-j", ".text", elf, LDR / "loader.bin"),
+                               ("common/bin/objdump", "-d", elf),
+                               ("common/bin/objdump", "-h", elf),
+                               ("common/bin/objdump", "-t", elf))
+    (LDR / "loader.dis").write_text(dis)
+    for ln in hdr.splitlines():     # the loader rewrites the flash: nothing may run from XIP
+        p = ln.split()
+        if len(p) > 4 and p[1].startswith(".") and int(p[3], 16) >= 0x02000000 and int(p[2], 16):
+            raise SystemExit(f"loader: section {p[1]} at {p[3]} is outside RAM")
+    image = (LDR / "loader.bin").read_bytes()
+    if not image or len(image) > 0x14000:
+        raise SystemExit("loader: image empty or too big")
+    ota = ldr_wrap(image)
+    (LDR / "ota.bin").write_bytes(ota)
+    bss = [int(ln.split()[0], 16) for ln in syms.splitlines() if ln.rstrip().endswith("_bss_end")]
+    print(f"loader: image {len(image)} B at {LOADER_LOAD:#x}" + (f", bss end {bss[0]:#x}" if bss else ""))
+    print(f"loader: ota.bin {len(ota)} B")
+    return ota
+
+
+# ---- app
+
+def build_app():
+    flags = [*CFLAGS, *FPU, "-Ifirmware/fm1/hal", "-Ifirmware/fm1/src", "-Ifirmware/app", "-Ibuild/gen"]
+    for flag in ("RAVEL_CDC", "RAVEL_UAC", "RAVEL_TRS"):
+        v = os.environ.get(flag)    # unset: the default in firmware/fm1/src/ravel_fm1.c
+        if v in ("0", "1"):
+            flags.append(f"-D{flag}={v}")
+    flags.append(f'-DFELUCCA_ID="{PRODUCT}"')
+    o2 = [f if f != "-Os" else "-O2" for f in flags] + BD + ["-Wno-unused-variable"]
+    OUT.mkdir(parents=True, exist_ok=True)
+    units = [("cc", "-c", FW / "crt0.S", "-o", OUT / "crt0.o"),
+             ("cc", "-c", FW / "hal" / "fm1_vec.S", "-o", OUT / "fm1_vec.o"),
+             ("cc", "-c", FW / "hal" / "fm1_isr.S", "-o", OUT / "fm1_isr.o"),
+             ("cc", "-c", FW / "hal" / "fm1_cpu1.S", "-o", OUT / "fm1_cpu1.o"),
+             ("cc", *flags, "-c", FW / "src" / "ravel_fm1.c", "-o", OUT / "ravel_fm1.o")]
+    objs = [OUT / "crt0.o", OUT / "fm1_vec.o", OUT / "fm1_isr.o", OUT / "fm1_cpu1.o", OUT / "ravel_fm1.o"]
+    for src, name in O2_UNITS:
+        units.append(("cc", *o2, "-c", src, "-o", OUT / name))
+        objs.append(OUT / name)
+    tc_all(*units)
+    elf = OUT / "ravel.elf"
+    # unreferenced functions (each in its own section: -ffunction-sections) are dropped: the DSP keeps
+    # mono reference paths for the host tests that the firmware no longer calls
+    tc("pi32v2/bin/ld", "--gc-sections", "-e", "_start", "-T", FW / "app.ld", *objs, "-o", elf)
+    for sect in ("text.bin", "data.bin", "ramtext.bin", "c1text.bin"):
+        (OUT / sect).unlink(missing_ok=True)
+    *_, syms, dis, rt = tc_all(("common/bin/objcopy", "-O", "binary", "-j", ".text", elf, OUT / "text.bin"),
+                               ("common/bin/objcopy", "-O", "binary", "-j", ".data", elf, OUT / "data.bin"),
+                               ("common/bin/objcopy", "-O", "binary", "-j", ".ram_text", elf, OUT / "ramtext.bin"),
+                               ("common/bin/objcopy", "-O", "binary", "-j", ".c1_text", elf, OUT / "c1text.bin"),
+                               ("common/bin/objdump", "-t", elf),
+                               ("common/bin/objdump", "-d", elf),
+                               ("common/bin/objdump", "-d", "-j", ".ram_text", elf))
+    (OUT / "ravel.dis").write_text(dis)
+
+    def symv(name):
+        return int(re.search(r"^([0-9a-f]+) .*\s" + name + r"$", syms, re.M).group(1), 16)
+    img = bytearray((OUT / "text.bin").read_bytes())
+    # .ram_text, .c1_text (the second core's loop) and .data follow .text at their load addresses, in
+    # that order; the start-up copies them by words
+    for sect, lname in (("ramtext.bin", "_rt_load"), ("c1text.bin", "_c1_load"), ("data.bin", "_data_load")):
+        load = symv(lname)
+        if load % 4:
+            raise SystemExit(f"{lname} {load:#x} is not word aligned")
+        blob = (OUT / sect).read_bytes() if (OUT / sect).exists() else b""
+        if blob:
+            if load - APP_XIP < len(img):
+                raise SystemExit(f"{lname} overlaps the image")
+            img += b"\xff" * (load - APP_XIP - len(img))
+            img += blob
+    img += b"\xff" * (-len(img) % 4)
+    (OUT / "ravel.bin").write_bytes(img)
+    return bytes(img), syms, dis, rt
+
+
+def check(img, syms, dis, rt):
+    errors, notes = [], []
+    m = re.search(r"^([0-9a-f]+) .*\s_start$", syms, re.M)
+    if not m or int(m.group(1), 16) != APP_XIP:
+        errors.append(f"_start is not at {APP_XIP:#x}")
+    if img[:4] != bytes.fromhex("04818000"):
+        errors.append(f"image starts with {img[:4].hex()}, not the entry stub")
+    rt_calls = [ln for ln in rt.splitlines() if re.search(r"\bcall\b", ln)]
+    if rt_calls:                    # RAM code runs with the flash off: no calls into XIP
+        errors.append(f".ram_text contains calls: {rt_calls[:3]}")
+    else:
+        notes.append(f".ram_text: {len([ln for ln in rt.splitlines() if LINE.match(ln)])} insns, no calls")
+    for ln in dis.splitlines():     # nothing may call or load an address in the chip ROM
+        mm = LINE.match(ln)
+        if not mm:
+            continue
+        for v in re.findall(r"= (-?\d+) <|call -?\d+ <[^:>]*: ([0-9a-f]+) >", mm.group(3)):
+            val = (int(v[0]) & 0xFFFFFFFF) if v[0] else int(v[1], 16) & 0xFFFFFFFF
+            if 0xFFC00000 <= val < 0xFFD00000:
+                errors.append(f"reference to ROM address {val:#010x}")
+    if len(img) > APP_SLOT:
+        errors.append(f"image {len(img)} B exceeds the app slot")
+    # the FPU is single precision; a soft-double routine in the image means a double crept in
+    soft = sorted(set(re.findall(r"\s(__(?:add|sub|mul|div|neg|cmp|eq|ne|lt|le|gt|ge|un|extendsf|truncdf|fixdf|fixunsdf|floatsidf|floatunsidf|floatdidf)\w*df\w*)$", syms, re.M)))
+    if soft:
+        errors.append(f"soft-double routines linked: {soft[:6]} (a double in the code)")
+    else:
+        notes.append("no soft-double routines (single-precision FPU only)")
+
+    def sym(name):
+        mm = re.search(r"^([0-9a-f]+) .*\s" + name + r"$", syms, re.M)
+        return int(mm.group(1), 16) if mm else 0
+    bss = sym("_bss_end") - 0x01C08000
+    pool = sym("_pool_end") - sym("_pool_start")
+    notes.append(f"image {len(img)} B; RAM .data+.bss {bss} B of 98304; pool {pool} B of {0x54000}")
+    if bss > 96 * 1024:
+        errors.append("RAM region overflow")
+    if 0x54000 - pool < 8192:                     # keep >= 8 KiB of the pool spare
+        errors.append(f"pool headroom {0x54000 - pool} B < 8192 B")
+    return errors, notes
+
+
+# Every hardware register access lives in hal/. In src/ and loader/ (comments stripped):
+#  - no volatile pointer cast, except of a C object's address (`*(volatile T *)&x`: a read-once
+#    of a RAM flag shared with an ISR, e.g. usb.c ota_wire_send);
+#  - no literal in a register or reserved window (core SFRs 0x10000-0x13FFF, SFC 0x40000-0x43FFF,
+#    GPIO/IOMAP 0x50000-0x51FFF, CPU 0x1EE0000-0x1EEFFFF, RAM top 0x01C7F000- (boot info,
+#    mailbox, vectors), XIP 0x02000000-0x020FFFFF);
+#  - no inline asm, except the empty compiler barrier RING_PUBLISH() (emits no instruction);
+#  - no HAL register macro (a hal/ #define that is, or expands to, a volatile access).
+# Linker symbols (_bss_start[], _rt_load[], ...) are plain C objects and pass.
+MMIO_LIT = re.compile(r"\b0x0*(1[0-3][0-9a-f]{3}|4[0-3][0-9a-f]{3}|5[01][0-9a-f]{3}|1ee[0-9a-f]{4}|"
+                      r"1c7f[0-9a-f]{3}|20[0-9a-f]{5})u?l?\b", re.I)
+MMIO_CAST = re.compile(r"\(\s*(?:const\s+)?volatile\b[^()]*\*\s*\)(?!\s*&)")
+MMIO_ASM = re.compile(r"\b(?:__asm__|asm)\b(?!\s+volatile\s*\(\s*\"\"\s*:::\s*\"memory\"\s*\))")
+
+
+def mmio_check():
+    def strip(s):
+        s = re.sub(r"/\*.*?\*/", lambda m: "\n" * m.group(0).count("\n"), s, flags=re.S)
+        return re.sub(r"//[^\n]*", "", s)
+    defs = {}
+    for h in sorted((FW / "hal").glob("*.h")):
+        for m in re.finditer(r"^#define\s+(\w+)(?:\([^)]*\))?\s+(.*)$", strip(h.read_text()), re.M):
+            defs[m.group(1)] = m.group(2)
+    regs = {n for n, b in defs.items() if re.search(r"\bvolatile\b", b)}
+    while True:                                   # macros built on register macros (FM1_WR_LIMIT_H -> FM1_X2)
+        more = {n for n, b in defs.items() if n not in regs and set(re.findall(r"\w+", b)) & regs}
+        if not more:
+            break
+        regs |= more
+    errors = []
+    for f in sorted([*(FW / "src").rglob("*.[ch]"), *(FW / "loader").glob("*.c"), *APP.glob("*.[ch]")]):
+        for no, ln in enumerate(strip(f.read_text()).splitlines(), 1):
+            where = f"{f.relative_to(SRC)}:{no}"
+            for rx, what in ((MMIO_LIT, "register/window address"), (MMIO_CAST, "volatile pointer cast"),
+                             (MMIO_ASM, "inline asm")):
+                m = rx.search(ln)
+                if m:
+                    errors.append(f"{where}: {what} outside hal/ ({m.group(0).strip()}); add a hal/ helper")
+            used = set(re.findall(r"\b[A-Z_][A-Z0-9_]*\b", ln)) & regs
+            if used:
+                errors.append(f"{where}: HAL register macro {sorted(used)[0]} outside hal/; use a hal/ helper")
+    return errors
 
 
 def main():
+    global PRODUCT, VERSION
     ap = argparse.ArgumentParser()
-    ap.add_argument("--sdk", type=Path, default=ROOT / "build" / "fm1_open")
-    ap.add_argument("--out", type=Path, default=ROOT / "build" / "fm1")
+    ap.add_argument("--release", metavar="X.Y[.Z]", help="release build: identity FM-1_96XXYYZZ")
+    ap.add_argument("--sdk", type=Path, help="JieLi AC79 SDK checkout (default: $AC79_SDK)")
     a = ap.parse_args()
-    sdk_root = a.sdk.resolve()
-    sdk = sdk_root / "sdk"
-    if not (sdk / "lib" / "libfm1_engine.a").exists():
-        raise SystemExit("build_fm1: no FM1 Open SDK: run tools/get_sdk.sh")
-    # the SDK files must be the ones its manifest names
-    manifest = json.loads((sdk / "manifest.json").read_text())
-    for rel, h in manifest["files"].items():
-        if sha(sdk_root / rel) != h:
-            raise SystemExit(f"build_fm1: SDK file differs from its manifest: {rel}")
-    bin_ = toolchain()
-    out = a.out
-    obj = out / "obj"
-    shutil.rmtree(out, ignore_errors=True)
-    obj.mkdir(parents=True)
-    gen = ROOT / "build" / "gen"
-    gen.mkdir(parents=True, exist_ok=True)
-    if not (gen / "rv_font.h").exists():
-        run([sys.executable, ROOT / "tools" / "gen_rv_font.py", gen / "rv_font.h"])
-
-    inc = [sdk / "include", sdk / "include" / "libc", sdk / "config", ROOT / "firmware" / "board",
-           ROOT / "firmware" / "app", gen]
-    base = FLAGS + [f"-I{p}" for p in inc] + ["-DBD_NUM_GRAINS=16", "-DBD_NO_DELAY", "-DBD_READER_ONLY",
-                                             "-DRV_CACHE_RAM=__attribute__((section(\".memp_memory_x\")))"]
-    # Ravel is built for size: the SDK leaves it about 80 KB of the app area
-    units = [
-        (ROOT / "firmware" / "app" / "ravel_app.c", ["-Wno-unused-function", "-Oz"]),
-        (ROOT / "core" / "beads" / "bd.c", ["-Wno-unused-function", "-Oz"]),
-        (ROOT / "core" / "beads" / "bd_tables.c", ["-Oz"]),
-        (ROOT / "firmware" / "board" / "ravel_board.c", ["-fno-lto"]),
-        (ROOT / "firmware" / "board" / "audio.c", []),
-        (ROOT / "firmware" / "board" / "device.c", []),
-        (ROOT / "firmware" / "board" / "panel.c", ["-fno-lto", "-fno-pic"]),
-    ]
-    objs = []
-    for i, (src, extra) in enumerate(units):
-        o = obj / f"{i}_{src.stem}.o"
-        print(f"compile {src.relative_to(ROOT)}")
-        run([bin_ / "clang"] + base + extra + ["-c", src, "-o", o])
-        objs.append(o)
-    # the build identity the device reports after an update, and the fixed layout
-    ident_in = [hashlib.sha256((sdk / "manifest.json").read_bytes()).hexdigest()]
-    for src, _ in units:
-        ident_in.append(f"{src.relative_to(ROOT)}:{sha(src)}")
-    build_id = hashlib.sha256("\n".join(ident_in).encode()).hexdigest()
-    ident = gen / "build_identity.c"
-    ident.write_text('#include "layout.h"\n'
-                     f"const struct fm1_firmware_layout fm1_layout = {{{USER_BYTES}U,{UPDATE_FAMILY}U}};\n"
-                     "const unsigned char fm1_build_id[32] = {" + ",".join(f"0x{build_id[i:i+2]}" for i in range(0, 64, 2)) + "};\n"
-                     f'const unsigned char fm1_update_identity[27] = "{PRODUCT}";\n')
-    o = obj / "build_identity.o"
-    run([bin_ / "clang"] + base + ["-c", ident, "-o", o])
-    objs.append(o)
-    # the linker script, as the SDK's build fills it
-    ld = (sdk / "config" / "linker.ld.in").read_text().replace("@SBC_DECODER@", "sbc_decoder\n") \
-        .replace("@ACL_TX_EXTRA@", " + 1024").replace("@ACL_RX_EXTRA@", " + 4096")
-    (gen / "linker.ld").write_text(ld)
-    plugin = next((p for p in (bin_ / "LLVMgold.so", bin_.parent / "lib" / "LLVMgold.so") if p.exists()), None)
-    linker = bin_ / "ld" if (bin_ / "ld").exists() else bin_ / "pi32v2-ld"
-    elf = out / "ravel.elf"
-    cmd = [linker] + (["--plugin", plugin] if plugin else []) + ["-o", elf] + objs + LINK_PLUGIN + \
-          ["--start-group", "--whole-archive", sdk / "lib" / "libfm1_engine.a", "--no-whole-archive",
-           sdk / "lib" / "libc.a", sdk / "lib" / "libcompiler_rt.a", "--end-group", "--gc-sections",
-           f"-T{gen / 'linker.ld'}", f"-M={out / 'ravel.map'}", "--undefined=connectivity_wl82_bluetooth_start",
-           "--undefined=audio_app_bluetooth_open", "--undefined=bt_get_local_name", "--undefined=bt_get_mac_addr"]
-    print("link")
-    run(cmd)
-    report = check(elf, out, bin_)
-    # the app image: .text, .data, .ram0_data, .cache_ram_data, in that order
-    image = b""
-    objcopy = bin_ / "objcopy" if (bin_ / "objcopy").exists() else bin_ / "llvm-objcopy"
-    for sec in ("text", "data", "ram0_data", "cache_ram_data"):
-        part = out / f"{sec}.bin"
-        run([objcopy, "-O", "binary", "-j", f".{sec}", elf, part])
-        image += part.read_bytes()
-        part.unlink()
-    (out / "ravel-app.bin").write_bytes(image)
-    report["product"] = PRODUCT
-    report["build_id"] = build_id
-    limit = fm1pack.app_limit()
-    report.update({"app_bytes": len(image), "app_limit": limit})
-    if len(image) > limit:
-        (out / "report.json").write_text(json.dumps(report, indent=1))
-        raise SystemExit(f"build_fm1: the app image is {len(image)} B, {len(image) - limit} B over the "
-                         f"FM-1's {limit} B app area (Ravel's share is about {report['ravel_flash']} B)")
-    pkg = fm1pack.create(image, sdk / "tools" / "pack", out / "Ravel-FM1.fwsc", PRODUCT)
-    report.update(pkg)
-    (out / "report.json").write_text(json.dumps(report, indent=1))
-    print(f"app image {pkg['app_bytes']} B of {pkg['app_limit']} B; package {out / 'Ravel-FM1.fwsc'} ({pkg['package_bytes']} B)")
-    print(f"RAM: Ravel {report['ravel_ram']} B; runtime heap {report['heap']} B (the SDK needs 49152)")
-
-
-def check(elf, out, bin_):
-    """the checks that matter for Ravel: entry, sections, heap, SRAM placement"""
-    nm = bin_ / "nm" if (bin_ / "nm").exists() else bin_ / "llvm-nm"
-    syms = {}
-    for line in run([nm, "--print-size", elf]).splitlines():
-        m = re.match(r"^([0-9a-fA-F]+)\s+(?:([0-9a-fA-F]+)\s+)?(\w)\s+(\S+)", line)
-        if m:
-            syms[m.group(4)] = (int(m.group(1), 16), int(m.group(2) or "0", 16), m.group(3))
-    mp = (out / "ravel.map").read_text(errors="replace")
-    heap = re.search(r"0x([0-9a-fA-F]+)[^\n]*_MALLOC_SIZE\s*=", mp)
-    heap_b = int(heap.group(1), 16) if heap else 0
-    if heap_b < 49152:
-        raise SystemExit(f"build_fm1: the SDK's heap is {heap_b} B, it needs 49152: Ravel uses too much RAM")
-    for name in ("fm1_audio_irq", "ravel_audio_block", "fm1_input_tick", "fm1_panel_irq"):
-        if name not in syms or not (0x01C00000 <= syms[name][0] < 0x01C80000):
-            raise SystemExit(f"build_fm1: {name} must be in internal SRAM")
-    for name in ("_start",):
-        if syms.get(name, (0,))[0] != 0x02000120:
-            raise SystemExit("build_fm1: the entry must be the fixed ROM entry")
-    ravel = 0
-    for name, (addr, size, kind) in syms.items():
-        if kind in "bBdD" and 0x01C00000 <= addr < 0x01C80000 and (name.startswith(("rv", "tape_", "fb_", "dly_", "cut_", "trk", "vs", "ss", "gb", "ui", "voc_", "rev_", "beads", "evq", "sq", "pat", "wt", "sine_tab"))):
-            ravel += size
-    # Ravel's share of the app image: its own objects' code and constants
-    flash = 0
-    for m in re.finditer(r"^ (\.\S+)\s*\n?\s+0x([0-9a-fA-F]+)\s+0x([0-9a-fA-F]+)\s+(\S+)$", mp, re.M):
-        sec, addr, size, obj = m.group(1), int(m.group(2), 16), int(m.group(3), 16), m.group(4)
-        if addr >= 0x02000000 and ("lto-llvm" in obj or "/obj/" in obj) and "bss" not in sec:
-            flash += size
-    return {"heap": heap_b, "ravel_ram": ravel, "ravel_flash": flash}
+    name = "Ravel-FM1.fwsc"
+    if a.release:
+        # identity FM-1_96 + major, minor, patch as two digits each (0.3 -> FM-1_96000300). FM-1 is the
+        # model the update tools match on; 96 is Ravel's, the rest the version
+        m = re.fullmatch(r"v?(\d{1,2})\.(\d{1,2})(?:\.(\d{1,2}))?(-[A-Za-z0-9]+)?", a.release)
+        if not m:
+            raise SystemExit(f"--release {a.release}: use X.Y[.Z][-suffix], up to two digits each")
+        PRODUCT = "FM-1_96%02d%02d%02d" % (int(m[1]), int(m[2]), int(m[3] or 0))
+        VERSION = a.release
+    fm1pkg_make.SDK = a.sdk
+    for rel, sha in SDK_SHA256.items():          # fail early without the SDK
+        if hashlib.sha256(fm1pkg_make.sdk_file(rel)).hexdigest() != sha:
+            print(f"warning: SDK {rel} differs from AC79NN_SDK_V1.2.1; the package will not match the reference")
+    OUT.mkdir(parents=True, exist_ok=True)
+    generate()
+    ota = build_loader()
+    img, syms, dis, rt = build_app()
+    errors, notes = check(img, syms, dis, rt)
+    hal_err = mmio_check()
+    errors += hal_err
+    if not hal_err:
+        notes.append("register access: hal/ only (src/, loader/, app/ clean)")
+    for n in notes:
+        print("  ok   ", n)
+    for e in errors:
+        print("  FAIL ", e)
+    if errors:
+        raise SystemExit("build: checks failed")
+    pkg = fm1pkg_make.ufw(fm1pkg_make.flash_image(img, fm1pkg_make.KEY), ota, PRODUCT)
+    (OUT / name).write_bytes(pkg)
+    (OUT / "report.json").write_text(__import__("json").dumps(
+        {"product": PRODUCT, "version": VERSION, "app_bytes": len(img), "app_slot": APP_SLOT,
+         "package_bytes": len(pkg)}, indent=1) + "\n")
+    print(f"app      {OUT / 'ravel.bin'}  {len(img)} B of {APP_SLOT} B")
+    print(f"loader   {LDR / 'ota.bin'}  {len(ota)} B")
+    print(f"package  {OUT / name}  {len(pkg)} B, identity {PRODUCT}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

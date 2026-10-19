@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception */
+/* SPDX-License-Identifier: GPL-3.0-only */
 /* Ravel: projects in the platform's slots. A project is the whole rv_project, about 40 KB.
  * plat_load copies up to max bytes and returns the slot's stored length, so the header can be
  * checked before anything is copied over the playing project. */

@@ -6,7 +6,7 @@ Ravel is a custom firmware for the M-VAVE FM-1. It turns the FM-1 into a pocket 
   <img src="docs/signal-flow.svg" alt="Signal flow: synth, strike and tape tracks feed the mixer and buses; the mixer feeds the capture tape, which plays back into the tape tracks; an influence band connects every track to every other" width="760">
 </p>
 
-**Status: playable in the emulator; the FM-1 build does not fit yet.** The whole instrument runs in the browser emulator and the desktop simulator, from the same C sources the firmware is built from. The FM-1 build (on M-VAVE's official FM1 Open SDK) compiles and links, but the app image is about 20 KB larger than the FM-1's app area, so there is no installable package yet. It has not been run on an FM-1.
+**Status: playable in the emulator; the FM-1 firmware builds, but has not been run on an FM-1 yet.** The whole instrument runs in the browser emulator and the desktop simulator, from the same C sources the firmware is built from. The FM-1 firmware is bare metal (no vendor SDK) on the open hardware layer of the Felucca family of community firmwares, and installs from a web installer over USB. Until it has been tried on hardware, treat it as experimental.
 
 ## What it is
 
@@ -46,6 +46,8 @@ Ravel is a custom firmware for the M-VAVE FM-1. It turns the FM-1 into a pocket 
 17. [Recipes, step by step](#17-recipes-step-by-step)
 18. [Quick reference](#18-quick-reference)
 19. [Questions people ask](#19-questions-people-ask)
+
+**On the FM-1:** [Installing](#installing-on-the-fm-1) · [If the FM-1 will not start](#if-the-fm-1-will-not-start)
 
 **For developers:** [What's here](#whats-here) · [Building](#building) · [The FM-1 build](#the-fm-1-build) · [Licence](#licence)
 
@@ -91,7 +93,12 @@ The page has a safety limiter, so nothing can reach your speakers or interface a
 
 Projects you save in the emulator are kept in your browser, so they are still there next time on the same computer and browser.
 
-**On the FM-1.** Ravel will be installed like any other FM-1 firmware update once the build fits (see [The FM-1 build](#the-fm-1-build)). Everything else is the same as here.
+**On the FM-1.** Install it with the web installer (see [Installing on the FM-1](#installing-on-the-fm-1)). Everything works the same as in the emulator, with these differences:
+
+- **MASTER** is the output volume (the emulator's Volume slider).
+- **No audio input.** The FM-1's USB carries Ravel's sound *to* a computer (it shows up as an audio input named "Ravel FM-1" you can record), but nothing comes in. The INPUT tape source and the INPUT exciter are silent on the FM-1.
+- **Saving pauses the sound for a moment**, because the code runs from the same flash the project is written to.
+- **No Bluetooth.**
 
 ## 2. The panel
 
@@ -325,7 +332,7 @@ A strike is an **exciter** (what hits) and a **body** (what rings).
 | DECAY | GEOMTRY: the shape of the body | TRANS: level of the attack transient | P DROP: pitch drop at the hit (toms, kicks) |
 | TONE: brightness | MODES: 2–8 resonances | T DECAY: length of the transient | SEED: a different random variation |
 
-With **INPUT** as the exciter, audio coming in (USB audio on the FM-1, a file in the emulator) rings the body.
+With **INPUT** as the exciter, audio coming in rings the body (in the emulator, a file under Audio in; the FM-1 has no audio input).
 
 ## 7. ENV: articulation
 
@@ -518,7 +525,7 @@ The picture shows the whole tape, the four rows (the current one bright), the pl
 
 **Audio in.**
 
-- On the FM-1 this is USB audio from a computer or phone. In the emulator, choose a file under **Audio in**; "Record it onto the tape" sets the tape's source to INPUT.
+- In the emulator, choose a file under **Audio in**; "Record it onto the tape" sets the tape's source to INPUT. The FM-1 has no audio input in Ravel.
 - Set SOURCE to INPUT to catch it, or use it as a strike exciter (EXCITER = INPUT).
 
 ## 12. SEQ: steps and the graph
@@ -846,19 +853,41 @@ Turning ALGORITHM while armed moves recording to the new track.
 
 ---
 
+## Installing on the FM-1
+
+**Ravel has not been tested on FM-1 hardware yet. Installing it is at your own risk.**
+
+1. Open the web installer on Ravel's site (`https://OWNER.github.io/Ravel-FM1/install/`, in Chrome or Edge on a computer).
+2. Connect the FM-1, switched on, directly to the computer with a USB data cable.
+3. Press **Install**, allow MIDI when the browser asks, and wait until it says it is done. Don't unplug part way. The FM-1 restarts into Ravel.
+
+From the command line instead (`pip3 install mido python-rtmidi`): `python3 tools/fm1_install.py Ravel-FM1.fwsc`. The `.fwsc` is on the site (`firmware/Ravel-FM1.fwsc`) and on the repository's releases.
+
+The installer works from M-VAVE's own firmware, from Ravel, and from the other community firmwares. **To go back**, the same page writes M-VAVE's own FM-1 firmware (which you download from M-VAVE) back over the same cable; M-VAVE's own updater, M-UPGRADE, works too.
+
+### If the FM-1 will not start
+
+- **Hold OCT− and OCT+ for 5 seconds** while Ravel runs: the FM-1 goes into its update mode, and the installer can write any firmware.
+- **Safe mode:** if Ravel crashes twice while starting, it starts in a safe mode instead: no sound, USB on, so the web installer can reach it. PLAY tries Ravel again.
+- **Calibration:** hold OCT− and OCT+ while switching on to teach Ravel which button and knob is which, if the panel seems mixed up.
+- **Last resort:** if nothing shows on the screen but the FM-1 appears on USB in the chip's update mode, `tools/fm1_rescue.sh` (from X0X) puts M-VAVE's firmware back from a Mac. Beyond that, recovery needs the [FM-1-transporter](https://github.com/kurogedelic/FM-1-transporter).
+
 ## What's here
 
 | Path | What |
 | --- | --- |
 | `firmware/app/` | Ravel: the engine (`rv_engine.c`), synth engines (`rv_synth.c`), strike (`rv_strike.c`), tape (`rv_tape.c`), buses (`rv_bus.c`), sequencer (`rv_seq.c`), modulation and clock (`rv_mod.c`), parameters, presets, projects, and the interface (`rv_ui.c`, `rv_gfx.c`). Portable C99, single-precision float, no C library. |
-| `firmware/board/` | The FM-1 side: `ravel_board.c` (Ravel's platform on the SDK's API, its hooks, the audio block) and board code from FM1 Open (audio interrupt, panel, screen, input wiring) |
+| `firmware/fm1/` | The FM-1 side, bare metal: Felucca's hardware layer (`hal/`), start-up and memory map, the update loader (`loader/`), and in `src/`: USB, LCD, storage, the update entry, the panel map, Ravel's platform (`plat_fm1.c`) and the boot, audio interrupt and main loop (`main_fm1.c`) |
 | `core/beads/` | Beads' grain engine rewritten in integer C (MIT, see `core/beads/LICENSE-beads`) |
 | `host/` | The simulator: the whole app on a desktop, driven by scripts, writing screenshots and WAV files |
 | `web/emu/` | The browser emulator: the same code compiled to WebAssembly, on a drawn FM-1 panel |
 | `tests/beads/` | Renders 13 scenarios through the original Beads and the port, and compares them |
 | `tests/scenarios/` | Simulator scripts that play the firmware and check it (`tour.rvl` visits every page; `manual.rvl` takes the manual's screenshots) |
 | `docs/` | The signal-flow diagram, and `docs/manual/`: the panel drawing and the screenshots used in this manual |
-| `tools/` | The FM-1 build (`build_fm1.py`, `fm1pack.py`), SDK and toolchain download, font and table generators |
+| `tools/` | The FM-1 build (`build_fm1.py`, `fm1pkg_make.py`), the installer and rescue tools, the site assembler (`make_site.py`), toolchain and SDK-file downloads, font and table generators |
+| `web/installer/` | The web installer (Web MIDI), from Felucca and X0X |
+| `site/` | The GitHub Pages landing page |
+| `tests/fm1/` | Felucca's update-path tests, run against Ravel's package |
 
 ## Building
 
@@ -877,15 +906,19 @@ node web/emu/test.mjs        # smoke test
 python3 web/emu/bundle.py    # build/web/ravel-emulator.html, one file to open in a browser
 ```
 
-The FM-1 firmware, on Linux or macOS (JieLi's clang for the AC791N, and M-VAVE's FM1 Open SDK):
+The FM-1 firmware, on Linux x86-64 (JieLi's clang for the AC791N; on a Mac, X0X's build runs it in Docker):
 
 ```
-sh tools/get_toolchain.sh ~/.jieli
-sh tools/get_sdk.sh                                         # build/fm1_open, at a fixed commit
-JIELI_TOOLCHAIN=~/.jieli/toolchain python3 tools/build_fm1.py
+sh tools/get_toolchain.sh ~/.jieli                     # JieLi's Linux toolchain
+sh tools/get_ac79_files.sh ~/ac79                      # three files of JieLi's AC79 SDK the package contains
+JIELI_TOOLCHAIN=~/.jieli/toolchain AC79_SDK=~/ac79 python3 tools/build_fm1.py [--release 0.3]
 ```
 
-`build_fm1.py` does what the SDK's own `Build.ps1` does: it checks the SDK against its manifest, compiles with the SDK's flags, links against the SDK's library and linker script, checks the heap, SRAM placement and entry point, and packages `build/fm1/Ravel-FM1.fwsc` with `tools/fm1pack.py` (a Python port of the SDK's `Package.cs`). The update identity is `FM-1_8960002`.
+`build_fm1.py` builds Felucca's update loader and the app (the platform at `-Os`, the instrument and Beads at `-O2`), checks the image (entry point, no calls from RAM code into flash, no ROM references, no double-precision code, register access only in `hal/`, the RAM and pool budgets) and packages `build/fm1/Ravel-FM1.fwsc`. A release build's identity is `FM-1_96` and the version as two digits each (`0.3` is `FM-1_96000300`).
+
+The site (what the Pages workflow publishes): `python3 tools/make_site.py _site build/web/ravel-emulator.html build/fm1/Ravel-FM1.fwsc VERSION`.
+
+Publishing: every push to `main` rebuilds the site (enable it once under Settings → Pages → Source: GitHub Actions); pushing a tag such as `v0.3` also makes a release with the firmware and the emulator.
 
 The Beads comparison:
 
@@ -897,21 +930,23 @@ make test
 
 ## The FM-1 build
 
-Ravel runs as the app on M-VAVE's FM1 Open SDK. The SDK's control task calls Ravel's hooks (`groove_screen_init`, `groove_screen_control`); the audio interrupt asks Ravel for 128 frames at a time; controls, LEDs, the screen, flash and USB audio go through the SDK's API. The SDK's library brings the RTOS, USB, Bluetooth and the update path.
+Ravel runs bare metal on the FM-1's JieLi AC791N, on the open hardware layer that Felucca wrote and X0X carried on: no vendor SDK, no RTOS. A 10 kHz timer scans the keys, encoders and LEDs and runs USB; the codec's DMA interrupt asks Ravel for 512 frames at a time (two calls of 256), and the main loop draws the interface about 30 times a second.
 
-- **Flash:** the SDK takes about 371 KB of the 454 KB app area, which leaves Ravel about 82 KB. Ravel is about 102 KB at `-Oz` with LTO, so it is **about 20 KB over**. The build stops with the size and keeps the ELF and map; the CI job reports it without failing.
-- **RAM:** Ravel uses about 257 KB of main RAM (the 120 KB tape is most of it) and the cache RAM for the delay line, leaving the SDK the 48 KB heap it needs.
-- **Not checked on hardware:** CPU load (the DSP at `-Oz` is slower than at `-O2`), the FPU state between the audio interrupt and the control task, and the package itself (`fm1pack.py` has not been compared byte for byte with `Package.cs` output).
-- **Not in this version:** Bluetooth audio and MIDI (Bluetooth is switched off), MIDI over USB, and tape punch-in. USB audio input feeds the tape and the strike exciter; the output is sent to USB as well.
+- **Flash:** the app is about 200 KB of the 568 KB app slot.
+- **RAM:** the platform uses about 45 KB of the 96 KB main RAM; the instrument's state (the 120 KB tape, voices, buses) about 280 KB of the 336 KB pool.
+- **Storage:** eight project slots of 32 KB in the flash's data area; the panel calibration beside them.
+- **USB:** MIDI, and USB audio *to* the computer (Ravel's output, recordable). MIDI in on the TRS jack too. Ravel does not act on incoming MIDI yet.
+- **Not checked on hardware:** everything. In particular the CPU load of a dense project (the render runs inside the DMA's deadline; an overrun drops a block).
+- **Not in this version:** Bluetooth, audio input, tape punch-in.
 - **Beads on the FM-1:** grain mode only (no delay mode, which the delay bus covers), reading the shared tape. The emulator and simulator use the same options.
 
 ## Licence
 
-GPL-3.0 only (see `LICENSE`). Ravel's firmware sources also carry a permission to link with M-VAVE's FM1 binary SDK, the same one M-VAVE gives for its own app code (see `LICENSE-EXCEPTION.md`); a firmware package must include `firmware/board/FM1-APP-LICENSE.md` and `firmware/board/FM1-THIRD_PARTY.md`. The Beads port keeps Mutable Instruments' MIT licence. Third-party code is listed in `THIRD_PARTY.md`.
+GPL-3.0 only (see `LICENSE`). The FM-1 platform layer, loader, installer and tools are Felucca's and X0X's (GPL-3.0). The Beads port keeps Mutable Instruments' MIT licence. A firmware package also contains three files of JieLi's AC79 SDK (Apache-2.0). Third-party code is listed in `THIRD_PARTY.md`.
 
 ## Credits
 
 - Mutable Instruments (Émilie Gillet) for Beads.
-- M-VAVE for [FM1 Open](https://github.com/m-vave/fm1_open): the SDK, its board code and its packager.
-- [X0X](https://github.com/charlesvestal/fm1-x0x), a Felucca fork, for the simulator's design, its PNG writer and the toolchain script.
-- The authors of Felucca, JIANT, SLOOP and sloopDX for opening up the FM-1.
+- [Felucca](https://github.com/hugelton/Felucca) by Leo Kuroshita (@kurogedelic), Hügelton Instruments: the FM-1's open hardware layer, USB, storage, update loader and web installer that Ravel runs on.
+- [X0X](https://github.com/charlesvestal/fm1-x0x), a Felucca fork, for the platform as Ravel takes it, the simulator's design, its PNG writer and the build, install and rescue tools.
+- The authors of JIANT, SLOOP and sloopDX, and everyone who mapped the FM-1.

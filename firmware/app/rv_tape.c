@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception */
+/* SPDX-License-Identifier: GPL-3.0-only */
 /* Ravel: the capture tape and the tape tracks.
  *
  * One tape, in Beads' own formats (clean 16-bit, tape 12-bit, dirty 8-bit mu-law), always

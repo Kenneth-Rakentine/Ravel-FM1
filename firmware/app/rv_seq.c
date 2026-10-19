@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-only WITH GPL-3.0-linking-exception */
+/* SPDX-License-Identifier: GPL-3.0-only */
 /* Ravel: the sequencer. Every track has its own pattern, length, rate, direction (forward,
  * reverse, ping-pong, snake, or Silt's graph: cords say where the playhead goes next) and clock
  * (the master, an LFO, dust, or another track through an influence CLOCK route: René-style).
