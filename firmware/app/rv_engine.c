@@ -174,6 +174,10 @@ static void note_on_internal(int t, int note, int vel, int env, uint16_t chain)
             vo->a.gate = 1;
         if (rv.tp[t][TP_ENGINE] == ENG_PHYS)
             phys_strike(vo, tr->eff);
+        else if (rv.tp[t][TP_ENGINE] == ENG_CHIP)
+            chip_note(vo, tr->eff);
+        else if (rv.tp[t][TP_ENGINE] == ENG_CZ)
+            cz_note(vo, tr->eff, t);
     } else if (kind == KIND_STRIKE) {
         int poly = clampi(rv.tp[t][TP_POLY], 0, 1) + 1, count = 0, pick = -1;
         uint32_t oldest = 0xFFFFFFFFu;
@@ -378,12 +382,39 @@ static inline float skin(track_t *tr, float x, float drive, float fld, int bits,
     return x;
 }
 
+/* the Juno-60's chorus: a BBD swept by a triangle. I: 0.513 Hz, II: 0.863 Hz over 1.66-5.35 ms;
+ * I+II: 9.75 Hz over 3.3-3.7 ms. The wet path is darkened like a BBD's anti-alias filters. */
+static inline float chorus_tick(track_t *tr, float x, int mode)
+{
+    static const float hz[4] = {0.0f, 0.513f, 0.863f, 9.75f}, lo[4] = {0.0f, 1.66f, 1.66f, 3.3f}, hi[4] = {0.0f, 5.35f, 5.35f, 3.7f};
+    float tri, ms, d, fr, a, b;
+    int32_t di, r0;
+    if ((uint32_t)tr->ch_w >= 256u)
+        tr->ch_w = 0;
+    tr->ch_buf[tr->ch_w] = (int16_t)clampf(x * 16000.0f, -32000.0f, 32000.0f);
+    tr->ch_ph += hz[mode] * RV_DT;
+    tr->ch_ph -= fm_floorf(tr->ch_ph);
+    tri = tr->ch_ph < 0.5f ? tr->ch_ph * 2.0f : 2.0f - tr->ch_ph * 2.0f;
+    ms = lo[mode] + (hi[mode] - lo[mode]) * tri;
+    d = ms * 0.001f * RV_FS;
+    di = (int32_t)d;
+    fr = d - (float)di;
+    r0 = (tr->ch_w - di) & 255;
+    a = (float)tr->ch_buf[r0];
+    b = (float)tr->ch_buf[(r0 - 1) & 255];
+    tr->ch_w = (tr->ch_w + 1) & 255;
+    tr->ch_lp += ((a + (b - a) * fr) * (1.0f / 16000.0f) - tr->ch_lp) * 0.62f;   /* about 8 kHz */
+    return tr->ch_lp;
+}
+
 static inline float insert_tick(track_t *tr, int ins, float x, float a, float b)
 {
     int k;
     switch (ins) {
     case INS_COMB: {
-        float fr = 175.0f * fm_exp2f(a * 5.0f), d = clampf(44100.0f / fr - 0.42f, 2.0f, 253.0f), z, y, fd;   /* 0.42: the loop's smoothing delays it */
+        /* TUNE in semitones, 64 = C4 (so KEY at +63 keeps it in unison with the keys); the
+         * buffer reaches down to about F3. 0.42: the loop's smoothing delays it */
+        float fr = 261.6256f * fm_exp2f((a * 127.0f - 64.0f) * (1.0f / 12.0f)), d = clampf(44100.0f / fr - 0.42f, 2.0f, 253.0f), z, y, fd;
         int32_t di = (int32_t)d, i0 = tr->comb_w - di, i1;
         fd = d - (float)di;                              /* fractional delay: in tune up high */
         if (i0 < 0)
@@ -500,6 +531,13 @@ static void render_sub(float *outl, float *outr, int n)
         if (rv.tp[t][TP_KIND] == KIND_STRIKE && rv.tp[t][TP_S0] == EXC_INPUT)
             for (i = 0; i < n; i++)
                 tr->exc[i] += (in_buf[2 * i] + in_buf[2 * i + 1]) * 0.5f * ingain;
+        {
+            float pk = 0.0f;
+            for (i = 0; i < n; i++)
+                if (fm_fabsf(tr->exc[i]) > pk)
+                    pk = fm_fabsf(tr->exc[i]);
+            rv_live.exc_in[t] = pk > rv_live.exc_in[t] ? pk : rv_live.exc_in[t] * 0.995f;   /* held, falling slowly */
+        }
         for (i = 0; i < n; i++)
             tr->buf[i] = 0.0f;
     }
@@ -565,6 +603,7 @@ static void render_sub(float *outl, float *outr, int n)
         int kind = rv.tp[t][TP_KIND];
         float drive, fld, derez, ia, ib, imix, lvl, pan, gl, gr, peak = 0.0f, ring = tr->ring_amt;
         int bits, mask, ins, chain_bad = 0;
+        int chorus = kind == KIND_SYNTH && rv.tp[t][TP_ENGINE] == ENG_CZ ? clampi(rv.tp[t][TP_S3], 0, 3) : 0;
         uint8_t muted = (rv.mute >> t) & 1u;
         if (rv.solo && !((rv.solo >> t) & 1u))
             muted = 1;
@@ -628,6 +667,11 @@ static void render_sub(float *outl, float *outr, int n)
                 peak = fm_fabsf(x);
             if (!muted) {
                 float sl = x * gl, sr = x * gr, m = x * lvl;
+                if (chorus) {                       /* Juno-60 style: dry + bbd left, dry - bbd right */
+                    float wet = chorus_tick(tr, x, chorus);
+                    sl = (x + wet) * gl * 0.75f;
+                    sr = (x - wet) * gr * 0.75f;
+                }
                 outl[i] += sl;
                 outr[i] += sr;
                 voc_in[i] += m * eff[TP_VOC] * (1.0f / 127.0f);

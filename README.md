@@ -18,13 +18,13 @@ Ravel is a custom firmware for the M-VAVE FM-1 that turns the FM-1 into a pocket
 
 ## What it is
 
-- **Synth tracks** (T1 to T4), six engines: **VA** (saw to pulse, supersaw, sync, sub, noise, through-zero FM), **PD** (Casio-style phase distortion, 8 waves, foam sidebands, ring), **FM** (4 operators, 12 algorithms, a wave per operator), **PHYS** (string, bowed, blown, membrane), **FORMANT** (vowel filter bank or FOF grains), **PARTICLE** (pulsar emitters that pull into sync).
-- **Strike tracks** (T5, T6): an exciter (click, noise, metal, FM burst, dust, rain, bow, breath, or the audio input) strikes a body (ping filters, modal bars, a struck disc or coupled strings), with a transient layer, ring mod and a pitch drop.
+- **Synth tracks** (T1 to T4), seven engines: **VA** (saw to pulse, supersaw, sync, sub, noise, through-zero FM), **CZ** (a full Casio CZ: two lines, the eight CZ waves, 8-step DCO, DCW and DCA envelopes, ring and noise modulation, vibrato and a Juno-60 style chorus), **FM** (4 operators, 12 algorithms, a wave per operator), **PHYS** (string, bowed, blown, membrane), **FORMANT** (vowel filter bank or FOF grains), **PARTICLE** (pulsar emitters that pull into sync), **CHIP** (SID-style waves arpeggiating through offsets, then a decompose stage that crushes and breaks the sound apart).
+- **Strike tracks** (T5, T6): an exciter (click, noise, metal, FM burst, dust, rain, bow, breath, or EXT: another track's sound) strikes a body (ping filters, modal bars, a struck disc or coupled strings), with a transient layer, ring mod and a pitch drop.
 - **Tape tracks** (T7, T8): no oscillator. They play the shared 120 KB capture tape as **MLR** playheads (four rows, jumps on the keys, rates from -2× to 4×), through the **Beads** grain engine, or as **slices** found in what was caught.
 - **Capture tape:** records the master, one track, the buses or the audio input. **Catch** keeps what is on it, **resample** records a bar (or 2 or 4) onto row 1 on the downbeat, erosion and "dirty" half-rate µ-law for more time.
 - **Influence:** an 8 × 8 grid where any track can modulate, trigger, excite, ring, jump the tape of, or clock any other.
 - **Articulation:** onset, continuant and termination stages with curve, overshoot, a loop, a tail and **Give** (a spring that lets the level lag and bounce), two destinations, and a 256-shape envelope library that steps can recall.
-- **Sequencer:** each track runs in **STEPS** or **GRAPH** mode. Steps: length, rate and direction, parameter locks, microtiming, ratchets with curves, conditions, chance. Graph (from Silt): cords set where a playhead goes next, two playheads walk the same graph, each playing notes, only the gate, or only the pitch (so rhythm and melody can take different paths), head 2 can play another track, and each head has a function generator (rise, fall, arch, decay, swell, or an LFO or dust) that moves its speed, times or plus the clock. Plus density arcs, a sieve, scale quantizing, René-style clocking from LFOs or dust, and a two-oscillator master clock.
+- **Sequencer:** each track runs in **STEPS** or **GRAPH** mode. Steps: length, rate and direction, parameter locks, microtiming, ratchets with curves, conditions, chance. Graph (from Silt): cords set where a playhead goes next, two playheads walk the same graph, each playing notes, only the gate, or only the pitch (so rhythm and melody can take different paths), head 2 can play another track, and each head has a function generator (rise, fall, arch, decay, swell, or an LFO or dust) that moves its speed, times or plus the clock. Plus density arcs, a per-track note interval, scale quantizing, René-style clocking from LFOs or dust, and a two-oscillator master clock.
 - **Modulation:** two LFOs, dust, an 8-slot matrix and 4 macros with 8 destinations each (curves and windows).
 - **Buses:** a stereo delay (spread, wobble, freeze), a space reverb (motion, diffusion, low cut), a feedback bus (filter, comb, smear, shift, fold or crush, returning to the master or into a track), a filter pair (low, band or high pass each; series, parallel or feedback, with two LFOs), an 8-band vocoder (its body is dust, drops, noise, the tape or a track; attack, release, shift, width), and master drive with microcuts and punch-in effects on the keys. Each bus page shows the current track's send into it.
 - **Song:** patterns A and B per track, 16 scenes, a 32-row arrangement, mute and solo, tap tempo, 8 project slots.
@@ -76,6 +76,7 @@ The emulator page has three parts:
   - **Play** and **Record**;
   - **T1–T8** pick a track;
   - **Sound** chooses the track's kind, engine and a preset;
+  - **Page ← Back / Forward →** steps through the section's pages (the same as turning SELECT, or the ← → keys);
   - **Go to** jumps straight to a section;
   - **Catch** and **Resample** for the tape;
   - **Audio in** plays a file into the input;
@@ -104,7 +105,7 @@ Projects you save in the emulator are kept in your browser, so they are still th
 **On the FM-1.** Install it with the web installer (see [Installing on the FM-1](#installing-on-the-fm-1)). Everything works the same as in the emulator, with these differences:
 
 - **MASTER** is the output volume (the emulator's Volume slider).
-- **No audio input.** The FM-1's USB carries Ravel's sound *to* a computer (it shows up as an audio input named "Ravel FM-1" you can record), but nothing comes in. The INPUT tape source and the INPUT exciter are silent on the FM-1.
+- **No audio input.** The FM-1's USB carries Ravel's sound *to* a computer (it shows up as an audio input named "Ravel FM-1" you can record), but nothing comes in. So the FM-1 hides the input's controls: the tape has no INPUT source, and the ROWS page has no IN GAIN or INPUT knob. The EXT exciter still works there, from other tracks.
 - **Saving pauses the sound for a moment**, because the code runs from the same flash the project is written to.
 - **No Bluetooth.**
 
@@ -115,7 +116,7 @@ Projects you save in the emulator are kept in your browser, so they are still th
 | Control | What it does in Ravel |
 | --- | --- |
 | **MASTER** | Output volume |
-| **SELECT** | Moves to the next or previous page of the section you are in |
+| **SELECT** | Moves to the next page (turn right) or back to the previous one (turn left) in the section you are in |
 | **ALGORITHM** | Picks the track you are working on, **T1 to T8**. The keys play this track. |
 | **PRESETS** | Browses the list that belongs to the page: sounds on most pages, patterns on SEQ, scenes on SONG, slots on SAVE, rows on TAPE, steps on GRAPH, routes on INFLUENCE. The footer tells you which. |
 | **KNOB 1–4** | Change the four values in the row at the top of the screen, left to right |
@@ -134,7 +135,7 @@ The ten sections:
 | **ENV** | Articulation | How a note starts, holds and ends, and the 256-shape library |
 | **LFO** | Mod | Mod matrix, LFO 1, LFO 2, dust, macros |
 | **FX** | Buses | Delay, space, feedback, filter pair, vocoder, master |
-| **SCL** | Scale | Root, scale, transpose, sieve |
+| **SCL** | Scale | Root, scale, transpose, interval |
 | **ARP** | Tape | Capture, rows, and how a tape track plays the tape |
 | **SEQ** | Steps | Steps, step timing and shape, track settings, direction, graph and playheads |
 | **GLO** | Song | Mixers, scenes, arrangement, density arcs, clock |
@@ -178,6 +179,8 @@ Knobs speed up when you turn them quickly, so a fast turn crosses a whole range 
 
 So if a page seems to be "skipped", it is hidden because it does not apply to this track. Change the track or the setting and it comes back.
 
+**Greyed-out knobs.** When a knob does nothing with the track set as it is, its name and value turn grey. For example, on a strike track with the PING body, DAMP, INHARM, GEOMTRY and MODES are grey, because a ping filter has none of those. The value is kept, so it is ready if you change the setup. So are ENGINE and VELO on strike and tape tracks (engines are for synth tracks; strike and tape take velocity as it comes), VOICES on a tape track (one playhead; a strike track offers MONO or 2), T DECAY until TRANS is up, RING F until RING is up, ORDER, RATE and SEED except with the DUST or RAIN exciter, and on PHYS, POSITN for BLOWN and MEMBRAN.
+
 ## 4. How the parts connect
 
 <p align="center"><img src="docs/signal-flow.svg" alt="Signal flow" width="760"></p>
@@ -186,7 +189,7 @@ Ravel has **8 tracks**. Each track is one of three kinds, and any track can be a
 
 | Kind | What it is | Default tracks |
 | --- | --- | --- |
-| **SYNTH** | An oscillator voice with six engines: VA, PD, FM, PHYS, FORMANT, PARTICLE. Up to 4 voices. | T1–T4 |
+| **SYNTH** | An oscillator voice with seven engines: VA, CZ, FM, PHYS, FORMANT, PARTICLE, CHIP. Up to 4 voices. | T1–T4 |
 | **STRIKE** | An exciter hitting a resonant body: drums, metal, wood, rain on glass | T5–T6 |
 | **TAPE** | No oscillator. It plays the shared capture tape: MLR playheads, Beads grains, or slices. | T7–T8 |
 
@@ -219,7 +222,7 @@ The current track is highlighted.
 | 1 **LEVEL** | Track volume, 0–127 |
 | 2 **PAN** | −64 left to +63 right |
 | 3 **KIND** | SYNTH, STRIKE or TAPE. **Changing it resets the track to that kind's defaults.** |
-| 4 **ENGINE** | For synth tracks: VA, PD, FM, PHYS, FORMANT, PARTICLE |
+| 4 **ENGINE** | For synth tracks: VA, CZ, FM, PHYS, FORMANT, PARTICLE, CHIP |
 
 **ALGORITHM** picks the track; **PRESETS** loads a sound of the track's kind.
 
@@ -256,20 +259,24 @@ All pages here act on the current track (ALGORITHM). **PRESETS** browses sounds 
 | **SOUND** | KIND | ENGINE | VOICES (mono, 2, 3, 4) | VELO: how much key velocity changes the level |
 | **SOURCE 1–4** | the engine's own controls, see below | | | |
 | **PITCH** | PITCH (±24 semitones) | FINE (±50 cents) | GLIDE | – |
-| **FILTER** | FILTER type: LADDER, LOWPASS, BANDPASS, HIGHPASS, LPG | CUTOFF (Hz) | RESO | KEYTRK: the cutoff follows the note |
+| **FILTER** | FILTER type: LADDER, LOWPASS, BANDPASS, HIGHPASS, LPG, MS-20, SH-101 | CUTOFF (Hz) | RESO | KEYTRK: the cutoff follows the note |
 | **SKIN** | DRIVE (saturation) | FOLD (wavefolding) | BITS (bit reduction) | DEREZ (sample-rate reduction) |
 | **SKIN 2** | BITMASK (digital grit) | VOCODER: this track's send into the vocoder bus | – | – |
-| **INSERT** | INSERT effect: OFF, COMB, SHIFT, CRUSH, SMEAR | TUNE | AMOUNT | MIX |
+| **INSERT** | INSERT effect: OFF, COMB, SHIFT, CRUSH, SMEAR | TUNE: on COMB its note (C4 at the middle, a semitone a step); on SHIFT the shift | AMOUNT | MIX |
 | **MIX** | LEVEL | PAN | DELAY send | SPACE send |
 | **SENDS** | FEEDBK send | PAIR send (filter pair) | VOCODER send | – |
 
 <p align="center"><img src="docs/manual/voice-filter.png" alt="FILTER page" width="240"> <img src="docs/manual/voice-skin.png" alt="SKIN page" width="240"> <img src="docs/manual/voice-mix.png" alt="MIX page" width="240"></p>
 
+**MS-20** is hot and dirty: a two-pole filter whose resonance runs through clipping diodes, with the input driven. Turned up, it barks, then screams. **SH-101** is round and liquid: four smooth stages whose resonance sings rather than bites, and keeps its bass as it rises. Both are on synth tracks (all engines); try the 101 BASS and MS SCREAM presets.
+
+The filter belongs to synth voices. On strike and tape tracks the FILTER page's knobs are greyed out.
+
 **LPG** is a low-pass gate: the filter closes as the note fades, so sounds get darker as they die away (good for plucks and Buchla-style bongos).
 
 Changing **ENGINE** resets the SOURCE values to that engine's defaults. Use PRESETS to start from a finished sound instead.
 
-### The six synth engines (SOURCE pages)
+### The seven synth engines (SOURCE pages)
 
 **VA (virtual analog):** the familiar subtractive oscillator, and more.
 
@@ -280,16 +287,39 @@ Changing **ENGINE** resets the SOURCE values to that engine's defaults. Use PRES
 | SUPER: 1–7 stacked oscillators (supersaw) | TZFM: through-zero FM depth | |
 | DETUNE: spread of the stack | FMRATIO: modulator ratio (1/2 to 7) | |
 
-**PD (phase distortion, after Casio CZ):** a sine bent into other shapes. DCW is how bent it is, like a filter cutoff.
+**CZ:** a full Casio CZ (the CZ-101, 1000, 3000, 5000 and CZ-1 all share this voice). It works as the CZ's own sound chip does: a cosine read through a bent phase, where **DCW** is how bent it is (at 0 every wave is a sine). Each note plays one or two **lines**, and each line has two waves and three 8-step envelopes: **DCO** (pitch), **DCW** (waveform) and **DCA** (level). Ravel's filter, skin, inserts, LFOs and matrix all still work on top.
 
-| SOURCE 1 | SOURCE 2 |
-| --- | --- |
-| WAVE: SAW, SQUARE, PULSE, DBLSINE, SAWPULS, RESO1–3 | DCW ENV: how much the envelope opens DCW (±) |
-| WAVE2: the second wave | DETUNE between the two |
-| MIX of the two waves | FOAM: sideband fizz |
-| DCW: the amount of distortion | RING: ring modulation of the two |
+General settings, on the SOURCE pages:
 
-The RESO waves are the CZ's resonant shapes, which sound like a swept resonant filter with no filter.
+| SOURCE 1 | SOURCE 2 (detune: line 2) | SOURCE 3 (vibrato) | SOURCE 4 |
+| --- | --- | --- | --- |
+| LINE: **1**, **2**, **1+1'** (line 1 twice, the second detuned), **1+2'** (both lines, line 2 detuned) | DETUNE: + or - | VIB WAV: TRI, SQUARE, UP, DOWN | DCW +-: shifts both lines' DCW; give it an LFO in the matrix to sweep the timbre (the CZ itself could not) |
+| OCTAVE: -1, 0, +1 | DT OCT: 0–3 octaves | DELAY before it starts (0–99) | FOAM: takes the fundamental out, leaves the sidebands |
+| MOD: OFF, RING (line 2 times line 1), NOISE (line 2's pitch kicked by noise) | DT NOTE: 0–11 semitones | RATE (0–99) | VEL DCW: how much a softer touch closes DCW (0–9, CZ-1 style) |
+| CHORUS: OFF, I, II, I+II (Juno-60 style) | DT FINE: 0–60 (60 = a semitone) | DEPTH (0–99; 0 = none) | – |
+
+Then, per line (LINE 1, LINE 2):
+
+| KNOB 1 | KNOB 2 | KNOB 3 | KNOB 4 |
+| --- | --- | --- | --- |
+| WAVE 1: SAW, SQUARE, PULSE, DBL SIN, SAW PLS, RESO 1 (saw window), RESO 2 (triangle), RESO 3 (trapezoid) | WAVE 2: OFF, or a second wave | DCA KF: the level envelope runs faster on higher notes (0–9) | DCW KF: higher notes are duller (0–9) |
+
+And the envelopes, DCO 1, DCW 1, DCA 1 (and DCO 2, DCW 2, DCA 2):
+
+| PRESETS | KNOB 1 | KNOB 2 | KNOB 3 | KNOB 4 |
+| --- | --- | --- | --- | --- |
+| the step, 1–8 | RATE: how fast the step moves (0–99) | LEVEL it moves to (0–99) | SUS: the step the envelope holds while the key is down (OFF, 1–8) | END: its last step (1–8) |
+
+- **How an envelope runs:** from step 1, each step moves at its RATE to its LEVEL, then the next step starts. At the SUS step it waits while the key is held; when you let go it goes on from the step after SUS. It stops at END. Rates and levels follow the CZ's own curves: rate 99 is a few milliseconds, rate 0 almost forever; DCA levels are on the CZ's logarithmic scale.
+- **DCO levels:** up to 63 the pitch rises in 6.25-cent steps (63 is almost 4 semitones); from 64 it jumps in 2-semitone steps (64 is 8 semitones, 99 is 78). The DCO envelope can only raise the pitch, as on the CZ.
+- **Two waves on a line** alternate cycle by cycle, so the note sounds an octave lower with a mix of both characters (the CZ's "cascade"). Two RESO waves cannot be combined, as on the CZ.
+- **RESO waves** are a sine whose frequency rises with DCW, restarting every cycle under a falling window: like sweeping a resonant filter, with no filter.
+- **High notes** narrow DCW automatically, as the CZ does, so thin pulses stay audible.
+- **The DCA is the level envelope.** On a CZ track the ARTICULATION pages' shape knobs are greyed out; ENV>CUT, the envelope's DESTINATIONS and the influence routes follow the DCA instead.
+- **The pictures:** LINE pages draw the line's two cycles at its brightest DCW. Envelope pages draw the 8 steps, the SUS and END points, the step you are editing (white) and where the playing note is (amber dots).
+- **Presets:** CZ BRASS, CZ BELL (ring-modulated lines a twelfth apart), CZ STRINGS, RESO SWEEP, CZ BASS, NOISE HIT and FOAM.
+- **Projects from before the CZ** load with each CZ track set to a plain CZ tone.
+
 
 **FM:** 4 operators.
 
@@ -306,10 +336,12 @@ Each operator can be SINE, TRI, SAW, SQUARE, HALF, ABS, QUART or BITS.
 
 | SOURCE 1 | SOURCE 2 |
 | --- | --- |
-| MODEL: STRING (plucked), BOWED, BLOWN, MEMBRAN (drum skin) | EXCITE: how hard it is played |
-| BRIGHT: brightness of the excitation | INHARM: detunes the overtones (metallic) |
-| DAMP: how quickly highs die | BODY: resonance of the body |
-| POSITN: where it is struck or bowed | DECAY |
+| MODEL: STRING (plucked), BOWED, BLOWN, MEMBRAN (drum skin) | EXCITE: how hard it is played: pluck strength, bow speed, breath |
+| BRIGHT: brightness of the excitation | INHARM: detunes the overtones (metallic); on BOWED, lighter bow pressure (scratchier, airier) |
+| DAMP: how quickly highs die | BODY: resonance of the body (not MEMBRAN) |
+| POSITN: where it is plucked or bowed (STRING, BOWED) | DECAY |
+
+BOWED and BLOWN keep sounding for as long as the key is held, like a violin or a clarinet. BLOWN speaks an octave lower in character (a clarinet's hollow, odd-harmonic tone) but plays the note you press.
 
 **FORMANT:** vowels and voices.
 
@@ -329,18 +361,32 @@ Each operator can be SINE, TRI, SAW, SQUARE, HALF, ABS, QUART or BITS.
 | EMIT: 1–3 emitters | FORMANT: the burst's own pitch |
 | RATIO between emitters | SCATTER: timing randomness |
 
+**CHIP:** a glitchy chiptune voice, after the Syntakt's SY CHIP. A SID-style oscillator steps through the note you play and up to three offsets at RATE, so one voice plays a fast arpeggio, a chord or a "complex voice". A square sub oscillator sits under it, and a decompose stage after it reduces, crushes and breaks the sound apart.
+
+| SOURCE 1 | SOURCE 2 | SOURCE 3 | SOURCE 4 (decompose) |
+| --- | --- | --- | --- |
+| WAVE: TRI, SAW, PULSE, NOISE (the SID's noise register), SAW&PUL (the SID's combined wave), RING (a ring-modulated triangle), PWM (the width sweeps by itself), KICK and SNARE (drum tables) | OF2: the arp's second note, in semitones | SUB: a square sub oscillator on the note you play (it does not follow the arp) | SRR: sample-rate reduction (aliasing, grit) |
+| PW: pulse width (on RING, the ring partner's ratio; on PWM, how far it sweeps) | OF3: the third note | SUB OCT: the sub's octave, -3 to +1 | CRUSH: bits, 16 (clean) down to 1 |
+| RATE: how fast the arp steps, 2–128 steps a second (classic chip arps are around 50) | OF4: the fourth note | SYNC: the main oscillator restarts with the sub (hard sync), so as the arp moves the notes, the timbre sweeps | DECOMP: how often the sound breaks |
+| MODE: UP, DOWN, PINGPNG, RANDOM, ONCE (up through the notes, then stays) | STEPS: how many of the root, OF2, OF3 and OF4 the arp walks (1 = no arp) | OVER: overdrive | FRAG: the size of each piece, 1.5–46 ms |
+
+- **The arp:** for a minor chord, set OF2 +3, OF3 +7, OF4 +12 and STEPS 4. Multiples of 12 jump octaves. RATE, MODE and the offsets grey out while STEPS is 1.
+- **Sync:** with SYNC on and SUB OCT at -1, the sub holds the root while the arp's notes become synced, tearing timbres over it (the SYNC ARP preset). SUB OCT greys out while SUB is 0 and SYNC is off.
+- **Decompose:** the voice keeps its last 46 ms. At the end of each fragment, DECOMP is the chance that the next one breaks: the last fragment repeats, plays backwards, drops out, has its bits flipped, or plays at double speed. FRAG greys out while DECOMP is 0.
+- **Presets:** CHIP ARP, SID BASS (through the MS-20 filter), CHIP KICK, CHIP SNARE, DECOMPOSED and SYNC ARP.
+
 ### Strike tracks (SOURCE pages)
 
 A strike is an **exciter** (what hits) and a **body** (what rings).
 
 | SOURCE 1 | SOURCE 2 | SOURCE 3 | SOURCE 4 |
 | --- | --- | --- | --- |
-| EXCITER: CLICK, NOISE, METAL, FM, DUST, RAIN, BOW, BLOW, INPUT (the audio input) | DAMP | ORDER: how the modes are laid out | RING F: ring-mod frequency |
+| EXCITER: CLICK, NOISE, METAL, FM, DUST, RAIN, BOW, BLOW, EXT (only from outside) | DAMP | ORDER: how the modes are laid out | RING F: ring-mod frequency |
 | BODY: PING (filters), MODAL (bars and bells), DISC (cymbals, plates), STRINGS (coupled strings) | INHARM: how un-harmonic the modes are | RATE: for DUST and RAIN, how often grains fall | RING amount |
 | DECAY | GEOMTRY: the shape of the body | TRANS: level of the attack transient | P DROP: pitch drop at the hit (toms, kicks) |
 | TONE: brightness | MODES: 2–8 resonances | T DECAY: length of the transient | SEED: a different random variation |
 
-With **INPUT** as the exciter, audio coming in rings the body (in the emulator, a file under Audio in; the FM-1 has no audio input).
+With **EXT** as the exciter, the track makes no strike of its own: the body rings only from what comes in from outside. That is another track's sound through an **EXCITE** route (HOME › INFLUENCE), the feedback bus returning into this track, or, in the emulator, a file under Audio in. If nothing is coming in, the SOURCE page says so, and you will hear only the attack layer and the inserts, the same on every note. The body's pitch still follows the notes, so a track exciting it through an EXCITE route rings at the note you play.
 
 ## 7. ENV: articulation
 
@@ -355,7 +401,7 @@ Ravel's envelope is in three stages, named after how speech is described: the **
 | **TERMINATION** | RELEASE time | TAIL: a quiet tail after the release (room for reverbs to bloom) | ENV>CUT: how much the envelope opens the filter (±) | GIVE (the same spring) |
 | **DESTINATIONS** | DEST 1: any parameter of this track | AMOUNT 1 (±) | DEST 2 | AMOUNT 2 (±) |
 
-DESTINATIONS lets the envelope move up to two more parameters, such as FM's LEVEL2 or PD's DCW, so the timbre changes with the note.
+DESTINATIONS lets the envelope move up to two more parameters, such as FM's LEVEL2 or CZ's DCW +-, so the timbre changes with the note.
 
 ### LIBRARY
 
@@ -403,7 +449,13 @@ Ravel keeps **256 envelope shapes** that any step can recall, so one pattern can
 
 **Key tracking with KEY.** At AMOUNT +63, KEY moves these parameters by exactly one semitone a key: the **INSERT TUNE** of a COMB insert, **CUTOFF**, **PITCH** and **FINE**. Any other parameter moves one step a key. Smaller amounts track part of the way, and negative amounts turn the keyboard upside down. KEY reads the target track's newest note, so with several voices the comb follows the last key played.
 
-*Example: a strike track whose comb rings in tune with the keys.* On T5's INSERT page, set INSERT to COMB and TUNE to taste (TUNE now sets the comb's pitch at C4). Then on the MATRIX page: SOURCE **KEY**, TRACK **T5**, PARAM **TUNE**, AMOUNT **+63**. The comb now follows every key you play. Its range is five octaves, so very low or very high notes stop at the ends.
+*Example: a strike track whose comb rings in tune with the keys.*
+
+1. On T5's **INSERT** page (EDIT), set INSERT to **COMB**. Leave TUNE at **C4**, its default. AMOUNT sets how strongly the comb rings (try 90–127), and MIX how much of it you hear (try 127).
+2. Press **LFO** for the **MATRIX** page (not HOME › INFLUENCE: influence routes move a parameter by another track's envelope, not by the keys). Set SOURCE **KEY**, TRACK **T5**, PARAM **TUNE**, AMOUNT **+63**.
+3. Play: the comb now rings in unison with every key. Turn TUNE to C5 for an octave above, or G4 for a fifth.
+
+The comb reaches down to about F3; notes below that stop there.
 
 **Macros:** 4 macros, each moving up to 8 destinations at once. Each destination has its own start and end values, curve, and window (FROM % / TO %).
 
@@ -469,10 +521,11 @@ The effects last while the key is held. Letting go of FX releases them all.
 
 | KNOB 1 | KNOB 2 | KNOB 3 | KNOB 4 |
 | --- | --- | --- | --- |
-| ROOT: C to B | SCALE: CHROMA (off), MAJOR, MINOR, DORIAN, PHRYG, LYDIAN, MIXO, PENTA, MINPENT, WHOLE, HIRAJO, IWATO | TRANSPS: transposes everything that plays from steps (±24) | SIEVE: this track's note sieve (1–12) |
+| ROOT: C to B | SCALE: CHROMA (off), MAJOR, MINOR, DORIAN, PHRYG, LYDIAN, MIXO, PENTA, MINPENT, WHOLE, HIRAJO, IWATO | TRANSPS: transposes everything that plays from steps (±24) | INTERVAL: this track plays only notes this many semitones apart from the root (1–12) |
 
-- The scale corrects the notes that the **sequencer** plays. A note outside the scale moves down to the nearest scale note.
-- **SIEVE** (per track): a track with sieve N only plays notes whose distance from the root divides by N. For example, sieve 12 keeps only the roots, sieve 7 keeps the root and every seventh semitone above it (the fifth, the ninth…), and sieve 2 keeps every other semitone. Copy one pattern to two tracks with different sieves and they split it between them.
+- **The keys fold into the scale** (like Elektron's fold mode). With a scale set, every key plays: the lowest key plays the first scale note at or above F, and each key after it plays the next note of the scale, so the keyboard runs up through the scale across several octaves and no key is wrong or dead. With CHROMA the keys are chromatic again. Notes you record from the keys are recorded as played.
+- **The sequencer snaps** each step's note to the nearest scale note (a note exactly between two goes down).
+- **INTERVAL** (per track): a track with interval N only plays notes that are a multiple of N semitones from the root; other notes are skipped. INTERVAL 1 plays everything, 12 only the roots, 7 the root and the notes a fifth apart (stacked fifths: the fifth, the ninth…), 2 every other semitone. Copy one pattern to two tracks with different intervals and they split it between them.
 - **Set the root from the keys:** hold **SCL** and press a key.
 
 ## 11. ARP: the tape
@@ -542,7 +595,7 @@ The picture shows the whole tape, the four rows (the current one bright), the pl
 **Audio in.**
 
 - In the emulator, choose a file under **Audio in**; "Record it onto the tape" sets the tape's source to INPUT. The FM-1 has no audio input in Ravel.
-- Set SOURCE to INPUT to catch it, or use it as a strike exciter (EXCITER = INPUT).
+- Set SOURCE to INPUT to catch it, or ring a strike body with it (EXCITER = EXT).
 
 ## 12. SEQ: steps and the graph
 
@@ -605,19 +658,21 @@ On the STEPS picture:
 
 Set **SEQ › TRACK › MODE** to **GRAPH**. Now the steps sit in a circle, and each step has **cords** that say where a playhead goes next, instead of always moving to the following step. The pages after TRACK change to GRAPH, HEAD 1, HEAD 1 MOTION (and HEAD 2, HEAD 2 MOTION when head 2 is on).
 
+**GRAPH drives the same steps.** It is not a second sequencer: the steps you set on the STEPS pages (which are on, their notes, velocity, length, locks, ratchets and the rest) are exactly what plays in GRAPH mode too. GRAPH only changes **the order the playhead visits them**, and adds a second playhead. Edit the steps on STEPS, STEP TIMING and STEP SHAPE in either mode; draw the cords on GRAPH.
+
 | Page | KNOB 1 | KNOB 2 | KNOB 3 | KNOB 4 | PRESETS |
 | --- | --- | --- | --- | --- | --- |
-| **GRAPH** | CORD A: the step to go to next (NEXT = just the following step) | CORD B: a second choice (NONE = no branch) | BRANCH: how to choose between A and B | HEAD 2: its role | step to edit |
-| **HEAD 1** | ROLE: NOTES, GATE, PITCH | TRANSP: head 1's transpose | HEAD 2 role | – | – |
+| **GRAPH** | CORD A: the step to go to next, 1 to LENGTH (NEXT = just the following step) | CORD B: a second choice (NONE = no branch) | BRANCH: how to choose between A and B | HEAD 2: OFF, NOTES, RHYTHM, MELODY | step to edit |
+| **HEAD 1** | TRANSP: head 1's transpose | – | – | – | – |
 | **HEAD 1 MOTION** | SHAPE | DEPTH (±) | CYCLE: 2–64 steps | COMBINE: × CLOCK or + CLOCK | – |
-| **HEAD 2** | PLAYS: THIS track, or T1–T8 | H2 RATE | H2 START: the step it starts on | TRANSP | step |
+| **HEAD 2** | PLAYS: THIS track, or T1–T8 | H2 RATE | H2 START: the step it starts on (1 to LENGTH) | TRANSP | step |
 | **HEAD 2 MOTION** | SHAPE | DEPTH | CYCLE | COMBINE | – |
 
 **Making a graph:**
 
 1. Go to the GRAPH page.
 2. Pick a step with **PRESETS**, or hold its white key.
-3. Set **CORD A** (where it goes) and, if you want a branch, **CORD B**. The cords are drawn on the circle.
+3. Set **CORD A** (where it goes) and, if you want a branch, **CORD B**. The cords are drawn on the circle. A cord can only point at a step that exists (1 to the track's LENGTH). If you shorten LENGTH later, cords to steps past the end are ignored: they read NEXT or NONE until LENGTH grows again.
 4. Choose **BRANCH**, which decides between A and B at a fork:
    - **CHANCE:** a coin toss;
    - **TURNS:** alternate each visit;
@@ -627,17 +682,18 @@ Set **SEQ › TRACK › MODE** to **GRAPH**. Now the steps sit in a circle, and 
 **Two playheads** walk the same graph at once.
 
 - **Head 1** plays this track.
-- **Head 2** is off until you set its role (on GRAPH or HEAD 1). It has its own rate and start step, and can play **another track** (HEAD 2 › PLAYS).
+- **Head 2** is off until you choose what it does with **HEAD 2** on the GRAPH page. It has its own rate and start step, and can play **another track** (HEAD 2 › PLAYS).
 
-**Roles** split a melody into its parts:
+**HEAD 2** chooses how the two heads share the work. Head 1 always takes the other half, so no setting leaves the track silent:
 
-| Role | What the head does on a step |
-| --- | --- |
-| **NOTES** | Plays the step normally |
-| **PITCH** | Plays nothing; it only sets the pitch for the other head |
-| **GATE** | Plays a note using the pitch the PITCH head last set |
+| HEAD 2 | Head 2 | Head 1 |
+| --- | --- | --- |
+| **OFF** | – | plays the steps it visits |
+| **NOTES** | plays the steps it visits too: two voices on one graph | plays the steps it visits |
+| **MELODY** | picks the notes, plays nothing itself | plays the rhythm, with head 2's latest note |
+| **RHYTHM** | plays the rhythm, with head 1's latest note | picks the notes, plays nothing itself |
 
-Set **head 1 to GATE** and **head 2 to PITCH** and you have rhythm and melody on two different paths at two different speeds, which never quite repeat the same way.
+With **MELODY** or **RHYTHM**, rhythm and melody walk two different paths at two different speeds, so they never quite line up the same way twice. The picture shows each head's job at the top (H1 and H2).
 
 **MOTION** (Silt's function generators) moves a head's *speed* as it travels.
 
@@ -760,10 +816,10 @@ Turning ALGORITHM while armed moves recording to the new track.
 **Make a first sound**
 
 1. Turn **ALGORITHM** to T1.
-2. Press **EDIT** (SOUND page). Turn **KNOB 2** to **PD**.
-3. Turn **PRESETS** to hear PD's sounds; play the keys.
-4. Turn **SELECT** to SOURCE 1. Turn **KNOB 4 (DCW)** to bend the sound brighter.
-5. Press **ENV**. Turn **KNOB 1 (ATTACK)** for a slow swell and **KNOB 3 (OVERSHT)** for a bite.
+2. Press **EDIT** (SOUND page). Turn **KNOB 2** to **CZ**.
+3. Turn **PRESETS** to hear the CZ sounds (CZ BRASS, CZ BELL, CZ STRINGS…); play the keys.
+4. Turn **SELECT** to **DCW 1**. Turn **PRESETS** to step 1 and turn **KNOB 2 (LEVEL)** up to make the attack brighter.
+5. **SELECT** to **DCA 1**. On step 1, turn **KNOB 1 (RATE)** down for a slow swell.
 
 **Write a beat**
 
@@ -959,7 +1015,7 @@ Ravel runs bare metal on the FM-1's JieLi AC791N, on the open hardware layer tha
 
 ## Licence
 
-GPL-3.0 only (see `LICENSE`). The FM-1 platform layer, loader, installer and tools are Felucca's and X0X's (GPL-3.0). The Beads port keeps Mutable Instruments' MIT licence. A firmware package also contains three files of JieLi's AC79 SDK (Apache-2.0). Third-party code is listed in `THIRD_PARTY.md`.
+GPL-3.0 only (see `LICENSE`). The FM-1 platform layer, loader, installer and tools are Felucca's and X0X's (GPL-3.0). The Beads port keeps Mutable Instruments' MIT licence. A firmware package also contains three files of JieLi's AC79 SDK (Apache-2.0). The CZ engine is a port of MAME's uPD933 emulation (BSD-3-Clause). Third-party code is listed in `THIRD_PARTY.md`.
 
 ## Credits
 
@@ -967,5 +1023,6 @@ GPL-3.0 only (see `LICENSE`). The FM-1 platform layer, loader, installer and too
 - [Felucca](https://github.com/hugelton/Felucca) by Leo Kuroshita (@kurogedelic), Hügelton Instruments: the FM-1's open hardware layer, USB, storage, update loader and web installer that Ravel runs on.
 - [X0X](https://github.com/charlesvestal/fm1-x0x), a Felucca fork, for the platform as Ravel takes it, the simulator's design, its PNG writer and the build, install and rescue tools.
 - The authors of JIANT, SLOOP and sloopDX, and everyone who mapped the FM-1.
+- Devin Acker and MAME, whose uPD933 emulation shows how the Casio CZ's sound chip works (the CZ engine follows it; BSD-3-Clause, see `THIRD_PARTY.md`).
 
 <p align="center"><img src="docs/brand/ravel-logo-footer.jpg" alt="RAVEL · FM-1 custom synth firmware" width="360"></p>

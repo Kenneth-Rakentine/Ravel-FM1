@@ -24,11 +24,15 @@ static uint64_t turn_bits[RV_TRACKS];
 
 /* ------------------------------------------------- graph mode and heads --- */
 static int is_graph(int t) { return rv.tp[t][TP_SEQMODE] == SEQ_GRAPH || rv.tp[t][TP_DIR] == DIR_GRAPH; }
+/* HEAD 2 picks the pair: OFF or NOTES (head 1 plays notes too), MELODY (head 2 sets the pitch,
+ * head 1 plays it: ROLE_PITCH) or RHYTHM (head 2 plays head 1's pitches: ROLE_GATE). Head 1's role
+ * follows, so no setting leaves the track silent. */
 static int head_role(int t, int h)
 {
-    if (h == 0)
-        return is_graph(t) ? clampi(rv.tp[t][TP_H1ROLE], 0, 2) + ROLE_NOTES : ROLE_NOTES;
-    return is_graph(t) ? clampi(rv.tp[t][TP_H2ROLE], 0, 3) : ROLE_OFF;
+    int r2 = is_graph(t) ? clampi(rv.tp[t][TP_H2ROLE], 0, 3) : ROLE_OFF;
+    if (h == 1)
+        return r2;
+    return r2 == ROLE_PITCH ? ROLE_GATE : r2 == ROLE_GATE ? ROLE_PITCH : ROLE_NOTES;
 }
 static const float head_rates[9] = {0.25f, 0.3333f, 0.5f, 0.6667f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f};
 
@@ -114,18 +118,41 @@ static int step_rank(int si)
 
 static const uint16_t scale_masks[12] = {0xFFF, 0xAB5, 0x5AD, 0x6AD, 0x5AB, 0xAD5, 0x6B5, 0x295, 0x4A9, 0x555, 0x18D, 0x463};
 
+static int in_scale(int n)
+{
+    int sc = clampi(rv.gp[GP_SCALE], 0, 11), root = clampi(rv.gp[GP_ROOT], 0, 11);
+    int k = ((n - root) % 12 + 12) % 12;
+    return (scale_masks[sc] >> k) & 1u;              /* the masks hold C in bit 0 */
+}
+
+/* the nearest note of the scale (a tie goes down) */
 int rv_quantize_note(int n)
 {
-    int sc = clampi(rv.gp[GP_SCALE], 0, 11), root = clampi(rv.gp[GP_ROOT], 0, 11), k, d;
-    uint16_t m = scale_masks[sc];
-    if (sc == 0)
+    int d;
+    if (clampi(rv.gp[GP_SCALE], 0, 11) == 0)
         return n;
     for (d = 0; d < 7; d++) {
-        k = ((n - root) % 12 + 12) % 12;
-        if (m & (1u << (11 - k)))
-            return n;
-        n--;                                        /* down to the nearest scale note */
+        if (in_scale(n - d))
+            return n - d;
+        if (in_scale(n + d + 1) && !in_scale(n - d - 1))
+            return n + d + 1;
     }
+    return n;
+}
+
+/* the keys, folded (as Elektron's fold): with a scale set, key k plays the k-th scale note from
+ * the first one at or above the keyboard's lowest key, so every key plays and none is out */
+int rv_fold_key(int base, int k)
+{
+    int n = base, i;
+    if (clampi(rv.gp[GP_SCALE], 0, 11) == 0)
+        return base + k;
+    while (!in_scale(n))
+        n++;
+    for (i = 0; i < k; i++)
+        do
+            n++;
+        while (!in_scale(n));
     return n;
 }
 
@@ -207,9 +234,9 @@ static int next_step(int t, int h, int cur)
     }
     case DIR_GRAPH: {
         const rv_step *st = &rv.pat[t][rv.pat_cur[t] % RV_PATTERNS].s[cur];
-        int a = st->to[0] ? st->to[0] - 1 : (cur + 1) % len;
+        int a = st->to[0] && st->to[0] <= len ? st->to[0] - 1 : (cur + 1) % len;   /* past LENGTH: NEXT */
         n = a;
-        if (st->to[1]) {
+        if (st->to[1] && st->to[1] <= len) {
             int take2 = 0, br = clampi(rv.tp[t][TP_BRANCH], 0, 4);
             if (br == 0)
                 take2 = xs_uni(&seq_rng) < 0.5f;
@@ -297,7 +324,7 @@ static void step_fire(int t, int h, int si, uint32_t when)
     }
     note = s->note;
     if (rv.tp[tt][TP_KIND] != KIND_TAPE) {
-        int sieve = clampi(rv.tp[t][TP_SIEVE], 1, 12);
+        int ivl = clampi(rv.tp[t][TP_INTERVAL], 1, 12);
         if (is_graph(t))
             note += rv.tp[t][h ? TP_H2TRANS : TP_H1TRANS];
         note += rv.gp[GP_TRANSPOSE];
@@ -309,8 +336,8 @@ static void step_fire(int t, int h, int si, uint32_t when)
         }
         if (role == ROLE_GATE && sq[t].pitch_set)    /* a GATE head plays the PITCH head's note */
             note = sq[t].pitch_reg;
-        else if (sieve > 1 && ((note - rv.gp[GP_ROOT]) % sieve + sieve) % sieve)
-            return;                                 /* the sieve: this track answers only notes that pass */
+        else if (ivl > 1 && ((note - rv.gp[GP_ROOT]) % ivl + ivl) % ivl)
+            return;                                 /* INTERVAL: only notes a multiple of N semitones from the root */
     } else if (role == ROLE_PITCH) {
         return;
     }

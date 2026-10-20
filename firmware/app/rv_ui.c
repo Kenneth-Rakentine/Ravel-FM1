@@ -18,6 +18,7 @@ void rv_preset_apply(int t, int i);
 int rv_preset_step(int t, int cur, int dir);
 void rv_scene_store(int s);
 int rv_quantize_note(int n);
+int rv_fold_key(int base, int k);
 float rv_time_s(int v);
 float rv_cut_hz(float v);
 
@@ -27,7 +28,9 @@ static const char *const sec_names[NSEC] = {"HOME", "VOICE", "ARTICULATION", "MO
 static const uint8_t sec_button[NSEC] = {B_HOME, B_EDIT, B_ENV, B_LFO, B_FX, B_SCL, B_ARP, B_SEQ, B_GLO, B_SAVE};
 
 /* knob bindings: what a knob in the row stands for */
-enum { K_NONE, K_TP, K_GP, K_STEP, K_ROUTE, K_MAT, K_MACRO, K_ROW, K_ARR, K_ARC, K_LIB, K_TLEVEL, K_SAVE };
+enum { K_NONE, K_TP, K_GP, K_STEP, K_ROUTE, K_MAT, K_MACRO, K_ROW, K_ARR, K_ARC, K_LIB, K_TLEVEL, K_SAVE, K_CZ };
+/* K_CZ ids: line << 8 | envelope << 4 | field (the wave fields have no envelope) */
+enum { CZF_WAVE1, CZF_WAVE2, CZF_KFA, CZF_KFW, CZF_RATE, CZF_LEVEL, CZF_SUS, CZF_END };
 enum { SF_NOTE, SF_VEL, SF_LEN, SF_CHANCE, SF_MICRO, SF_RATCHET, SF_RCURVE, SF_COND, SF_ENV, SF_CUT, SF_TIE, SF_CORDA, SF_CORDB };
 enum { RF_TYPE, RF_AMT, RF_ARG, RF_CHANCE };
 enum { MF_SRC, MF_TRACK, MF_PARAM, MF_AMT };
@@ -38,12 +41,14 @@ typedef struct { uint8_t kind; uint16_t id; } kb_t;
 /* pictures */
 enum { PIC_TRACKS, PIC_INFL, PIC_SOURCE, PIC_FILTER, PIC_SKIN, PIC_INSERT, PIC_MIX, PIC_ENV, PIC_LIB, PIC_MATRIX,
        PIC_LFO1, PIC_LFO2, PIC_DUST, PIC_MACRO, PIC_VOC, PIC_FB, PIC_PAIR, PIC_DELAY, PIC_SPACE, PIC_MASTER, PIC_SCALE,
-       PIC_TAPE, PIC_STEPS, PIC_GRAPH, PIC_MOTION, PIC_MIXER, PIC_SCENES, PIC_ARR, PIC_ARCS, PIC_CLOCK, PIC_SAVE };
+       PIC_TAPE, PIC_STEPS, PIC_GRAPH, PIC_MOTION, PIC_MIXER, PIC_SCENES, PIC_ARR, PIC_ARCS, PIC_CLOCK, PIC_SAVE,
+       PIC_CZWAVE, PIC_CZENV };
 /* when a page shows */
 enum { V_ALL, V_SRC0, V_SRC1, V_SRC2, V_SRC3, V_SYNTH, V_STRIKE, V_TAPE, V_MLR, V_BEADS, V_SLICE, V_NOTTAPE,
-       V_STEPSMODE, V_GRAPH, V_GRAPH2 };
+       V_STEPSMODE, V_GRAPH, V_GRAPH2, V_CZL1, V_CZL2, V_NOTCZ };
 /* what PRESETS does on the page */
-enum { PR_NONE, PR_SOUND, PR_ROUTE, PR_MAT, PR_MACRO, PR_ROW, PR_PATTERN, PR_SCENE, PR_ARR, PR_ARC, PR_LIB, PR_SLOT, PR_STEPCUR };
+enum { PR_NONE, PR_SOUND, PR_ROUTE, PR_MAT, PR_MACRO, PR_ROW, PR_PATTERN, PR_SCENE, PR_ARR, PR_ARC, PR_LIB, PR_SLOT, PR_STEPCUR,
+       PR_CZSTEP };
 
 typedef struct {
     uint8_t sec, vis, pic, pr;
@@ -58,6 +63,8 @@ typedef struct {
 #define MF(p) {K_MAT, p}
 #define XF(p) {K_MACRO, p}
 #define NO {K_NONE, 0}
+#define CZW(l, f) {K_CZ, (uint16_t)((l) << 8 | (f))}
+#define CZE(l, e, f) {K_CZ, (uint16_t)((l) << 8 | (e) << 4 | (f))}
 
 static const page_t pages[] = {
     {SEC_HOME, V_ALL, PIC_TRACKS, PR_SOUND, "TRACKS", {TP(TP_LEVEL), TP(TP_PAN), TP(TP_KIND), TP(TP_ENGINE)}},
@@ -68,6 +75,15 @@ static const page_t pages[] = {
     {SEC_VOICE, V_SRC1, PIC_SOURCE, PR_SOUND, "SOURCE 2", {TP(TP_S4), TP(TP_S5), TP(TP_S6), TP(TP_S7)}},
     {SEC_VOICE, V_SRC2, PIC_SOURCE, PR_SOUND, "SOURCE 3", {TP(TP_S8), TP(TP_S9), TP(TP_S10), TP(TP_S11)}},
     {SEC_VOICE, V_SRC3, PIC_SOURCE, PR_SOUND, "SOURCE 4", {TP(TP_S12), TP(TP_S13), TP(TP_S14), TP(TP_S15)}},
+    /* the CZ engine's lines: waves and key follow, then the three 8-step envelopes each */
+    {SEC_VOICE, V_CZL1, PIC_CZWAVE, PR_SOUND, "LINE 1", {CZW(0, CZF_WAVE1), CZW(0, CZF_WAVE2), CZW(0, CZF_KFA), CZW(0, CZF_KFW)}},
+    {SEC_VOICE, V_CZL1, PIC_CZENV, PR_CZSTEP, "DCO 1", {CZE(0, CZE_DCO, CZF_RATE), CZE(0, CZE_DCO, CZF_LEVEL), CZE(0, CZE_DCO, CZF_SUS), CZE(0, CZE_DCO, CZF_END)}},
+    {SEC_VOICE, V_CZL1, PIC_CZENV, PR_CZSTEP, "DCW 1", {CZE(0, CZE_DCW, CZF_RATE), CZE(0, CZE_DCW, CZF_LEVEL), CZE(0, CZE_DCW, CZF_SUS), CZE(0, CZE_DCW, CZF_END)}},
+    {SEC_VOICE, V_CZL1, PIC_CZENV, PR_CZSTEP, "DCA 1", {CZE(0, CZE_DCA, CZF_RATE), CZE(0, CZE_DCA, CZF_LEVEL), CZE(0, CZE_DCA, CZF_SUS), CZE(0, CZE_DCA, CZF_END)}},
+    {SEC_VOICE, V_CZL2, PIC_CZWAVE, PR_SOUND, "LINE 2", {CZW(1, CZF_WAVE1), CZW(1, CZF_WAVE2), CZW(1, CZF_KFA), CZW(1, CZF_KFW)}},
+    {SEC_VOICE, V_CZL2, PIC_CZENV, PR_CZSTEP, "DCO 2", {CZE(1, CZE_DCO, CZF_RATE), CZE(1, CZE_DCO, CZF_LEVEL), CZE(1, CZE_DCO, CZF_SUS), CZE(1, CZE_DCO, CZF_END)}},
+    {SEC_VOICE, V_CZL2, PIC_CZENV, PR_CZSTEP, "DCW 2", {CZE(1, CZE_DCW, CZF_RATE), CZE(1, CZE_DCW, CZF_LEVEL), CZE(1, CZE_DCW, CZF_SUS), CZE(1, CZE_DCW, CZF_END)}},
+    {SEC_VOICE, V_CZL2, PIC_CZENV, PR_CZSTEP, "DCA 2", {CZE(1, CZE_DCA, CZF_RATE), CZE(1, CZE_DCA, CZF_LEVEL), CZE(1, CZE_DCA, CZF_SUS), CZE(1, CZE_DCA, CZF_END)}},
     {SEC_VOICE, V_ALL, PIC_SOURCE, PR_SOUND, "PITCH", {TP(TP_PITCH), TP(TP_FINE), TP(TP_GLIDE), NO}},
     {SEC_VOICE, V_ALL, PIC_FILTER, PR_SOUND, "FILTER", {TP(TP_FTYPE), TP(TP_CUT), TP(TP_RES), TP(TP_KTRK)}},
     {SEC_VOICE, V_ALL, PIC_SKIN, PR_SOUND, "SKIN", {TP(TP_DRIVE), TP(TP_FOLD), TP(TP_BITS), TP(TP_DEREZ)}},
@@ -103,10 +119,14 @@ static const page_t pages[] = {
     {SEC_BUS, V_ALL, PIC_VOC, PR_NONE, "VOCODER 2", {GP(GP_VOCATK), GP(GP_VOCREL), GP(GP_VOCSHIFT), GP(GP_VOCQ)}},
     {SEC_BUS, V_ALL, PIC_MASTER, PR_NONE, "MASTER", {GP(GP_MDRIVE), GP(GP_CUTSIZE), GP(GP_CUTREP), GP(GP_CUTMIX)}},
 
-    {SEC_SCALE, V_ALL, PIC_SCALE, PR_NONE, "SCALE", {GP(GP_ROOT), GP(GP_SCALE), GP(GP_TRANSPOSE), TP(TP_SIEVE)}},
+    {SEC_SCALE, V_ALL, PIC_SCALE, PR_NONE, "SCALE", {GP(GP_ROOT), GP(GP_SCALE), GP(GP_TRANSPOSE), TP(TP_INTERVAL)}},
 
     {SEC_TAPE, V_ALL, PIC_TAPE, PR_ROW, "CAPTURE", {GP(GP_TAPEQUAL), GP(GP_TAPESRC), GP(GP_RESBARS), GP(GP_ERODE)}},
+#ifdef RV_NO_AUDIO_IN
+    {SEC_TAPE, V_ALL, PIC_TAPE, PR_ROW, "ROWS", {{K_ROW, 0}, {K_ROW, 1}, NO, NO}},   /* no audio input */
+#else
     {SEC_TAPE, V_ALL, PIC_TAPE, PR_ROW, "ROWS", {{K_ROW, 0}, {K_ROW, 1}, GP(GP_INPUTLEVEL), GP(GP_TAPEMON)}},
+#endif
     {SEC_TAPE, V_TAPE, PIC_TAPE, PR_SOUND, "PLAYBACK", {TP(TP_S0), TP(TP_S1), TP(TP_S2), TP(TP_S3)}},
     {SEC_TAPE, V_MLR, PIC_TAPE, PR_SOUND, "MLR", {TP(TP_S4), TP(TP_S5), TP(TP_PITCH), TP(TP_LEVEL)}},
     {SEC_TAPE, V_BEADS, PIC_TAPE, PR_SOUND, "BEADS", {TP(TP_S6), TP(TP_S7), TP(TP_S8), TP(TP_S9)}},
@@ -119,7 +139,7 @@ static const page_t pages[] = {
     {SEC_SEQ, V_ALL, PIC_STEPS, PR_PATTERN, "TRACK", {TP(TP_SEQMODE), TP(TP_LEN), TP(TP_RATE), TP(TP_CLKSRC)}},
     {SEC_SEQ, V_STEPSMODE, PIC_STEPS, PR_PATTERN, "DIRECTION", {TP(TP_DIR), NO, NO, NO}},
     {SEC_SEQ, V_GRAPH, PIC_GRAPH, PR_STEPCUR, "GRAPH", {SF(SF_CORDA), SF(SF_CORDB), TP(TP_BRANCH), TP(TP_H2ROLE)}},
-    {SEC_SEQ, V_GRAPH, PIC_GRAPH, PR_STEPCUR, "HEAD 1", {TP(TP_H1ROLE), TP(TP_H1TRANS), TP(TP_H2ROLE), NO}},
+    {SEC_SEQ, V_GRAPH, PIC_GRAPH, PR_STEPCUR, "HEAD 1", {TP(TP_H1TRANS), NO, NO, NO}},
     {SEC_SEQ, V_GRAPH, PIC_MOTION, PR_NONE, "HEAD 1 MOTION", {TP(TP_H1SHAPE), TP(TP_H1DEPTH), TP(TP_H1CYCLE), TP(TP_H1COMB)}},
     {SEC_SEQ, V_GRAPH2, PIC_GRAPH, PR_STEPCUR, "HEAD 2", {TP(TP_H2TARGET), TP(TP_H2RATE), TP(TP_H2START), TP(TP_H2TRANS)}},
     {SEC_SEQ, V_GRAPH2, PIC_MOTION, PR_NONE, "HEAD 2 MOTION", {TP(TP_H2SHAPE), TP(TP_H2DEPTH), TP(TP_H2CYCLE), TP(TP_H2COMB)}},
@@ -145,6 +165,7 @@ static struct {
     uint8_t layer_used[NB];
     uint8_t step_page;                       /* SEQ: which 16 steps the keys show */
     int16_t step_cur;                        /* the step the step pages edit */
+    uint8_t cz_step;                         /* the step the CZ envelope pages edit, 0..7 */
     uint32_t step_key_held;                  /* step keys held (bit = white key index) */
     uint8_t step_turned;
     uint8_t key_note[NKEYS];
@@ -258,6 +279,9 @@ static int page_visible(int i)
     case V_STEPSMODE: return rv.tp[t][TP_SEQMODE] != SEQ_GRAPH && rv.tp[t][TP_DIR] != DIR_GRAPH;
     case V_GRAPH: return rv.tp[t][TP_SEQMODE] == SEQ_GRAPH || rv.tp[t][TP_DIR] == DIR_GRAPH;
     case V_GRAPH2: return (rv.tp[t][TP_SEQMODE] == SEQ_GRAPH || rv.tp[t][TP_DIR] == DIR_GRAPH) && rv.tp[t][TP_H2ROLE] != ROLE_OFF;
+    case V_CZL1: return kind == KIND_SYNTH && rv.tp[t][TP_ENGINE] == ENG_CZ && rv.tp[t][TP_S0] != 1;   /* not LINE = 2 */
+    case V_CZL2: return kind == KIND_SYNTH && rv.tp[t][TP_ENGINE] == ENG_CZ && (rv.tp[t][TP_S0] == 1 || rv.tp[t][TP_S0] == 3);
+    case V_NOTCZ: return !(kind == KIND_SYNTH && rv.tp[t][TP_ENGINE] == ENG_CZ);
     default: return 1;
     }
 }
@@ -329,6 +353,10 @@ static kinfo_t kb_info(kb_t k)
         r.max = pi->max;
         r.fmt = pi->fmt;
         r.names = pi->names;
+        if (k.id == TP_H2START)                      /* a step that exists */
+            r.max = clampi(rv.tp[ui.track][TP_LEN], 1, RV_STEPS);
+        if (k.id == TP_POLY && rv.tp[ui.track][TP_KIND] == KIND_STRIKE)
+            r.max = 1;                               /* a strike track has two voices: MONO or 2 */
         break;
     case K_GP:
         pi = rv_pinfo_global(k.id);
@@ -357,7 +385,7 @@ static kinfo_t kb_info(kb_t k)
         case SF_ENV: r.max = 256; break;
         case SF_CUT: r.max = 3; r.fmt = PF_ENUM; r.names = cut_names; break;
         case SF_TIE: r.max = 1; r.fmt = PF_ONOFF; break;
-        default: r.max = 64; break;
+        default: r.max = clampi(rv.tp[ui.track][TP_LEN], 1, RV_STEPS); break;   /* cords: steps 1..LENGTH */
         }
         break;
     }
@@ -447,6 +475,27 @@ static kinfo_t kb_info(kb_t k)
         r.fmt = PF_ENUM;
         r.names = save_actions;
         break;
+    case K_CZ: {
+        static const char *const fn[] = {"WAVE 1", "WAVE 2", "DCA KF", "DCW KF", "RATE", "LEVEL", "SUS", "END"};
+        static const char *const w1[] = {"SAW", "SQUARE", "PULSE", "DBL SIN", "SAW PLS", "RESO 1", "RESO 2", "RESO 3"};
+        static const char *const w2[] = {"OFF", "SAW", "SQUARE", "PULSE", "DBL SIN", "SAW PLS", "RESO 1", "RESO 2", "RESO 3"};
+        static const char *const sus[] = {"OFF", "1", "2", "3", "4", "5", "6", "7", "8"};
+        int f = k.id & 15, l = (k.id >> 8) & 1;
+        r.name = fn[f];
+        switch (f) {
+        case CZF_WAVE1: r.min = 1; r.max = 8; r.fmt = PF_ENUM; r.names = w1; break;
+        case CZF_WAVE2:                              /* two resonant waves cannot be cascaded */
+            r.max = rv.cz[ui.track].line[l].wave1 >= 6 ? 5 : 8;
+            r.fmt = PF_ENUM;
+            r.names = w2;
+            break;
+        case CZF_KFA: case CZF_KFW: r.max = 9; break;
+        case CZF_RATE: case CZF_LEVEL: r.max = 99; break;
+        case CZF_SUS: r.max = 8; r.fmt = PF_ENUM; r.names = sus; break;
+        default: r.min = 1; r.max = 8; break;
+        }
+        break;
+    }
     default:
         break;
     }
@@ -532,6 +581,20 @@ static int kb_get(kb_t k)
         return rv.gp[GP_SONGMODE];
     case K_ARC: return rv.arcs[ui.track][ui.cur_arc & 15];
     case K_LIB: return rv.lib[ui.cur_lib & 255][k.id];
+    case K_CZ: {
+        const rv_czline *pl = &rv.cz[ui.track].line[(k.id >> 8) & 1];
+        const rv_czenv *e = &pl->env[clampi((k.id >> 4) & 15, 0, 2)];
+        switch (k.id & 15) {
+        case CZF_WAVE1: return pl->wave1;
+        case CZF_WAVE2: return pl->wave2;
+        case CZF_KFA: return pl->kf_dca;
+        case CZF_KFW: return pl->kf_dcw;
+        case CZF_RATE: return e->rate[ui.cz_step & 7];
+        case CZF_LEVEL: return e->level[ui.cz_step & 7];
+        case CZF_SUS: return e->sus;
+        default: return e->end;
+        }
+    }
     case K_SAVE: return ui.save_action;
     default: return 0;
     }
@@ -559,6 +622,8 @@ static void kb_set(kb_t k, int v)
                 const rv_pinfo *pi = rv_pinfo_track(ui.track, p);
                 rv.tp[ui.track][p] = pi->name ? pi->def : 0;
             }
+            if (v == ENG_CZ)
+                rv_cz_init(ui.track);
             return;
         }
         rv_pid_set(PID_T(ui.track, k.id), v);
@@ -680,6 +745,31 @@ static void kb_set(kb_t k, int v)
     case K_LIB:
         rv.lib[ui.cur_lib & 255][k.id] = (uint8_t)v;
         break;
+    case K_CZ: {
+        rv_czline *pl = &rv.cz[ui.track].line[(k.id >> 8) & 1];
+        rv_czenv *e = &pl->env[clampi((k.id >> 4) & 15, 0, 2)];
+        switch (k.id & 15) {
+        case CZF_WAVE1:
+            pl->wave1 = (uint8_t)v;
+            if (v >= 6 && pl->wave2 >= 6)
+                pl->wave2 = 0;
+            break;
+        case CZF_WAVE2: pl->wave2 = (uint8_t)v; break;
+        case CZF_KFA: pl->kf_dca = (uint8_t)v; break;
+        case CZF_KFW: pl->kf_dcw = (uint8_t)v; break;
+        case CZF_RATE: e->rate[ui.cz_step & 7] = (uint8_t)v; break;
+        case CZF_LEVEL: e->level[ui.cz_step & 7] = (uint8_t)v; break;
+        case CZF_SUS: e->sus = (uint8_t)(v > e->end ? e->end : v); break;   /* the sustain step is never after the end */
+        default:
+            e->end = (uint8_t)v;
+            if (e->sus > e->end)
+                e->sus = e->end;
+            if (ui.cz_step >= v)
+                ui.cz_step = (uint8_t)(v - 1);
+            break;
+        }
+        break;
+    }
     case K_SAVE:
         ui.save_action = (uint8_t)v;
         ui.save_confirm = 0;
@@ -694,6 +784,10 @@ static void kb_format(kb_t k, int v, char *o)
     kinfo_t in = kb_info(k);
     o[0] = 0;
     if (!in.name) {
+        return;
+    }
+    if (k.kind == K_TP && k.id == TP_INA && rv.tp[ui.track][TP_INS] == INS_COMB) {
+        sx_note(o, 60 + v - 64);                    /* the comb's pitch: 64 = C4 */
         return;
     }
     if (k.kind == K_TP) {
@@ -730,7 +824,7 @@ static void kb_format(kb_t k, int v, char *o)
         return;
     }
     if (k.kind == K_STEP && (k.id == SF_CORDA || k.id == SF_CORDB)) {
-        if (!v)
+        if (!v || v > clampi(rv.tp[ui.track][TP_LEN], 1, RV_STEPS))   /* past LENGTH: not used */
             sx_cat(o, k.id == SF_CORDA ? "NEXT" : "NONE");
         else {
             sx_cat(o, "> ");
@@ -955,6 +1049,7 @@ static void preset_turn(int d)
     case PR_LIB: ui.cur_lib = (uint16_t)clampi(ui.cur_lib + d, 0, RV_LIB - 1); break;
     case PR_SLOT: ui.cur_slot = (uint8_t)clampi(ui.cur_slot + d, 0, PLAT_SLOTS - 1); ui.save_confirm = 0; break;
     case PR_STEPCUR: ui.step_cur = (int16_t)clampi(ui.step_cur + d, 0, clampi(rv.tp[t][TP_LEN], 1, 64) - 1); break;
+    case PR_CZSTEP: ui.cz_step = (uint8_t)clampi(ui.cz_step + d, 0, 7); break;
     default: break;
     }
 }
@@ -1047,7 +1142,7 @@ static void key_event(int k, int on)
 {
     uint32_t btn = plat_buttons();
     int wi = white_index(k), bi = black_index(k), t = ui.track;
-    int note = 53 + k + ui.octave * 12;
+    int note = rv_fold_key(53 + ui.octave * 12, k);   /* chromatic, or folded into the scale */
     /* --- a key let go: whatever it started ends, whatever has changed since (the track, the page,
      * a layer held) --- */
     if (!on) {
@@ -1394,6 +1489,16 @@ static void draw_knobs(void)
         if (!in.name || k.kind == K_NONE) {
             continue;
         }
+        if (k.kind == K_TP && !rv_tp_applies(ui.track, k.id)) {   /* does nothing as the track is set: greyed */
+            v = kb_get(k);
+            kb_format(k, v, val);
+            g_text_c(cx, 25, &FONT_T, in.name, C_LINE);
+            g_text_c(cx, 38, g_text_w(&FONT_B, val) > 56 ? &FONT_XS : &FONT_B, val, C_LINE);
+            g_fill(x + 6, 62, 48, 3, C_LINE);
+            if (i)
+                g_vline(x, 26, 40, C_LINE);
+            continue;
+        }
         v = kb_get(k);
         if (held >= 0 && k.kind == K_TP) {
             int lv;
@@ -1454,6 +1559,7 @@ static void draw_footer(void)
     case PR_LIB: hint = "PRESETS: SHAPE"; break;
     case PR_SLOT: hint = ui.save_confirm ? "PRESS SAVE AGAIN TO CONFIRM" : "PRESETS: SLOT  SAVE: DO IT"; break;
     case PR_STEPCUR: hint = "PRESETS: STEP"; break;
+    case PR_CZSTEP: hint = "PRESETS: STEP 1-8"; break;
     default:
         if (ui.sec == SEC_TAPE)
             hint = rv.tp[ui.track][TP_KIND] != KIND_TAPE ? "BLACK 9 CATCH  10 RESAMPLE"
@@ -1639,6 +1745,89 @@ static void pic_infl(void)
     }
 }
 
+/* the CZ page's line: which line a page edits (from its title), and its two cycles at the DCW
+ * envelope's highest level, drawn with the engine's own waveform function */
+static int cz_page_line(void) { const char *tt = cur_page()->title; while (*tt && *tt != ' ') tt++; return tt[0] && tt[1] == '2'; }
+
+static void pic_czwave(void)
+{
+    int t = ui.track, l = cz_page_line(), i, prev = 0, mx = 0, wa, wb, win;
+    const rv_czline *pl = &rv.cz[t].line[l];
+    char b[40];
+    for (i = 0; i < clampi(pl->env[CZE_DCW].end, 1, 8); i++)
+        if (pl->env[CZE_DCW].level[i] > mx)
+            mx = pl->env[CZE_DCW].level[i];
+    wa = clampi(pl->wave1, 1, 8);
+    wb = clampi(pl->wave2, 0, 8);
+    if (wa >= 6 && wb >= 6)
+        wb = 0;
+    win = wa >= 6 ? wa - 5 : wb >= 6 ? wb - 5 : 0;
+    g_hline(10, PIC_Y + 60, 220, C_LINE);
+    for (i = 0; i <= 220; i++) {
+        float s = cz_line_sample(cz_chip_wave(wa), wb ? cz_chip_wave(wb) : cz_chip_wave(wa), win, (float)i * (4096.0f / 221.0f),
+                                 (float)((127 * mx / 99) << 3));
+        int y = PIC_Y + 104 - (int)(s * 88.0f);
+        if (i)
+            g_line(10 + i - 1, prev, 10 + i, y, C_SYNTH);
+        prev = y;
+    }
+    b[0] = 0;
+    sx_cat(b, "DCW AT ITS PEAK ");
+    sx_int(b + 16, mx);
+    g_text(8, PIC_Y + 6, &FONT_T, b, C_DIM);
+    if (wb)
+        g_text_r(232, PIC_Y + 6, &FONT_T, "TWO WAVES: AN OCTAVE DOWN", C_DIM);
+}
+
+/* an 8-step envelope: the levels, SUS and END, the step being edited and where the voice is */
+static void pic_czenv(void)
+{
+    int t = ui.track, l = cz_page_line(), which, i, x0 = 14, w = 26, prevx = 14, prevy, live;
+    const char *tt = cur_page()->title;
+    const rv_czenv *e;
+    char b[40];
+    which = tt[2] == 'O' ? CZE_DCO : tt[2] == 'W' ? CZE_DCW : CZE_DCA;
+    e = &rv.cz[t].line[l].env[which];
+    live = rv_live.cz_step[t][l * 3 + which];
+    prevy = PIC_Y + 104;
+    g_hline(x0, PIC_Y + 104, 8 * w, C_LINE);
+    for (i = 0; i < 8; i++) {
+        int x = x0 + (i + 1) * w, y = PIC_Y + 104 - e->level[i] * 88 / 99, on = i < e->end;
+        uint16_t c = !on ? C_LINE : i == ui.cz_step ? C_WHITE : C_SYNTH;
+        g_line(prevx, prevy, x, y, c);
+        g_disc(x, y, i == ui.cz_step ? 3 : 2, c);
+        if (i == live)
+            g_disc(x, PIC_Y + 112, 2, C_AMBER);
+        b[0] = (char)('1' + i);
+        b[1] = 0;
+        g_text_c(x, PIC_Y + 116, &FONT_T, b, on ? C_DIM : C_LINE);
+        if (e->sus == i + 1) {
+            g_vline(x, PIC_Y + 14, 90, C_TEAL);
+            if (e->end != i + 1)
+                g_text_c(x, PIC_Y + 4, &FONT_T, "SUS", C_TEAL);
+        }
+        if (e->end == i + 1)
+            g_text_c(x, PIC_Y + 4, &FONT_T, e->sus == i + 1 ? "SUS+END" : "END", C_AMBER);
+        prevx = x;
+        prevy = y;
+    }
+    b[0] = 0;
+    sx_cat(b, "STEP ");
+    sx_int(b + 5, ui.cz_step + 1);
+    if (which == CZE_DCO) {                            /* what the DCO level means */
+        int lv = e->level[ui.cz_step & 7], n;
+        n = sx_cat(b, lv <= 63 ? "  +" : "  +");
+        if (lv <= 63) {
+            n = sx_int(b + n, lv * 625 / 100);
+            sx_cat(b, " CENTS");
+        } else {
+            sx_int(b + n, (lv - 60) * 2);
+            sx_cat(b, " SEMITONES");
+        }
+    }
+    g_text(8, PIC_Y + 126, &FONT_T, b, C_DIM);
+}
+
 static void pic_source(void)
 {
     int t = ui.track, kind = rv.tp[t][TP_KIND];
@@ -1654,13 +1843,18 @@ static void pic_source(void)
         g_frame(136, PIC_Y + 8, 90, 24, C_STRIKE);
         g_text_c(181, PIC_Y + 12, &FONT_B, bo->names[clampi(rv.tp[t][TP_S1], 0, bo->max)], C_INK);
         pic_scope(t, PIC_Y + 40, 90, C_STRIKE);
+        if (rv.tp[t][TP_S0] == EXC_INPUT && rv_live.exc_in[t] < 0.0005f) {   /* EXT with nothing coming in */
+            g_text_c(120, PIC_Y + 106, &FONT_T, "EXT: NOTHING IS EXCITING THE BODY", C_AMBER);
+            g_text_c(120, PIC_Y + 118, &FONT_T, "ADD AN EXCITE ROUTE ON HOME > INFLUENCE", C_DIM);
+        }
     } else if (kind == KIND_TAPE) {
         g_text_c(120, PIC_Y + 10, &FONT_B, "A TAPE TRACK: SEE ARP / TAPE", C_TAPE);
         pic_scope(t, PIC_Y + 34, 96, C_TAPE);
     } else {
-        static const char *const desc[ENG_N] = {"SAW TO PULSE, SUPERSAW, SUB, TZFM", "CASIO-STYLE PHASE DISTORTION",
+        static const char *const desc[ENG_N] = {"SAW TO PULSE, SUPERSAW, SUB, TZFM", "CASIO CZ: 2 LINES, 8-STEP DCO DCW DCA",
                                                 "4 OPERATORS, 12 ALGORITHMS", "STRING, BOW, BREATH, MEMBRANE",
-                                                "VOWELS: FILTER BANK OR FOF", "PULSAR EMITTERS, COUPLED"};
+                                                "VOWELS: FILTER BANK OR FOF", "PULSAR EMITTERS, COUPLED",
+                                                "SID WAVES, ARP OFFSETS, DECOMPOSE"};
         int e = clampi(rv.tp[t][TP_ENGINE], 0, ENG_N - 1);
         g_text(8, PIC_Y + 6, &FONT_B, rv_engine_names[e], C_SYNTH);
         g_text(8, PIC_Y + 30, &FONT_T, desc[e], C_MID);
@@ -1674,6 +1868,7 @@ static float filt_mag(int type, float f, float fc, float res)
 {
     float w = f / fc, q = 0.5f + res * res * 18.0f, re = 1.0f - w * w, im = w / q, m2 = re * re + im * im, m;
     switch (type) {
+    case FT_SH101:
     case FT_LADDER: {
         float q2 = 0.6f + res * 4.0f, im2 = w / q2;
         m = 1.0f / fm_sqrtf(m2 > 1e-6f ? m2 : 1e-6f);
@@ -1744,7 +1939,7 @@ static void pic_skin(void)
 static void pic_insert(void)
 {
     int t = ui.track;
-    static const char *const d[INS_N] = {"NO INSERT", "COMB: TUNE SETS THE PITCH", "FREQUENCY SHIFT, -200..+200 HZ",
+    static const char *const d[INS_N] = {"NO INSERT", "COMB: TUNE IS ITS NOTE", "FREQUENCY SHIFT, -200..+200 HZ",
                                          "CRUSH: RATE AND BITS", "SMEAR: FOUR ALLPASSES"};
     g_text(8, PIC_Y + 6, &FONT_B, d[clampi(rv.tp[t][TP_INS], 0, INS_N - 1)], C_INK);
     pic_scope(t, PIC_Y + 30, 100, C_TEAL);
@@ -2065,17 +2260,19 @@ static void pic_scale(void)
 {
     static const uint16_t masks[12] = {0xFFF, 0xAB5, 0x5AD, 0x6AD, 0x5AB, 0xAD5, 0x6B5, 0x295, 0x4A9, 0x555, 0x18D, 0x463};
     static const char *const nm[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
-    int root = rv.gp[GP_ROOT], sc = clampi(rv.gp[GP_SCALE], 0, 11), i, sieve = rv.tp[ui.track][TP_SIEVE];
+    int root = rv.gp[GP_ROOT], sc = clampi(rv.gp[GP_SCALE], 0, 11), i, ivl = rv.tp[ui.track][TP_INTERVAL];
     for (i = 0; i < 12; i++) {
-        int rel = ((i - root) % 12 + 12) % 12, in = (masks[sc] >> (11 - rel)) & 1, x = 6 + i * 19;
-        int pass = sieve <= 1 || rel % sieve == 0;
+        int rel = ((i - root) % 12 + 12) % 12, in = (masks[sc] >> rel) & 1, x = 6 + i * 19;   /* C in bit 0 */
+        int pass = ivl <= 1 || rel % ivl == 0;
         g_fill(x, PIC_Y + 20, 16, 60, in ? (i == root ? C_TEAL : C_PANEL) : C_BG);
         g_frame(x, PIC_Y + 20, 16, 60, C_LINE);
         g_text_c(x + 8, PIC_Y + 64, &FONT_T, nm[i], in ? C_INK : C_DIM);
-        if (sieve > 1)
+        if (ivl > 1)
             g_fill(x + 4, PIC_Y + 86, 8, 8, pass ? C_AMBER : C_LINE);
     }
-    g_text(8, PIC_Y + 104, &FONT_T, sieve > 1 ? "AMBER: NOTES THIS TRACK'S SIEVE LETS THROUGH" : "SCL + KEY SETS THE ROOT", C_DIM);
+    g_text(8, PIC_Y + 104, &FONT_T, ivl > 1 ? "AMBER: THE NOTES THIS TRACK'S INTERVAL PLAYS" : "SCL + KEY SETS THE ROOT", C_DIM);
+    if (sc)
+        g_text(8, PIC_Y + 116, &FONT_T, "THE KEYS PLAY THE SCALE, FOLDED", C_TEAL);
 }
 
 static void pic_tape(void)
@@ -2232,9 +2429,8 @@ static void pic_graph(void)
     }
     for (i = 0; i < len; i++) {
         const rv_step *s = &p->s[i];
-        int a = s->to[0] ? s->to[0] - 1 : (i + 1) % len;
-        if (a < len)
-            g_line(xs[i], ys[i], xs[a], ys[a], s->to[0] ? C_TEAL : C_LINE);
+        int own = s->to[0] && s->to[0] <= len, a = own ? s->to[0] - 1 : (i + 1) % len;   /* as rv_seq.c */
+        g_line(xs[i], ys[i], xs[a], ys[a], own ? C_TEAL : C_LINE);
         if (s->to[1] && s->to[1] - 1 < len)
             g_line(xs[i], ys[i], xs[s->to[1] - 1], ys[s->to[1] - 1], C_AMBER);
     }
@@ -2250,8 +2446,9 @@ static void pic_graph(void)
     if (rv.tp[t][TP_SEQMODE] != SEQ_GRAPH && rv.tp[t][TP_DIR] != DIR_GRAPH)
         g_text_c(120, PIC_Y + 124, &FONT_T, "SET MODE TO GRAPH ON THE TRACK PAGE", C_DIM);
     else {
-        static const char *const rn[] = {"OFF", "NOTES", "GATE", "PITCH"};
-        int r1 = clampi(rv.tp[t][TP_H1ROLE], 0, 2) + 1, r2 = clampi(rv.tp[t][TP_H2ROLE], 0, 3), tg = rv.tp[t][TP_H2TARGET];
+        static const char *const rn[] = {"OFF", "NOTES", "RHYTHM", "MELODY"};
+        int r2 = clampi(rv.tp[t][TP_H2ROLE], 0, 3), tg = rv.tp[t][TP_H2TARGET];
+        int r1 = r2 == ROLE_PITCH ? ROLE_GATE : r2 == ROLE_GATE ? ROLE_PITCH : ROLE_NOTES;   /* as rv_seq.c */
         char b[32] = "H1 ";
         sx_cat(b, rn[r1]);
         g_text(6, PIC_Y + 6, &FONT_T, b, C_WHITE);
@@ -2477,6 +2674,8 @@ static void draw_picture(void)
     case PIC_ARCS: pic_arcs(); break;
     case PIC_CLOCK: pic_clock(); break;
     case PIC_SAVE: pic_save(); break;
+    case PIC_CZWAVE: pic_czwave(); break;
+    case PIC_CZENV: pic_czenv(); break;
     default: break;
     }
 }
